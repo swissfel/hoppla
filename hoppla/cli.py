@@ -46,7 +46,7 @@ def cmd_ssh(cfg: Config, a) -> int:
     if s.type != "ssh":
         raise tunnel.TunnelError(f"'{s.id}' is not an SSH service.")
     if sys.stdin and sys.stdin.isatty():
-        if not tunnel.port_open(s.local_port):
+        if not tunnel.listening(s.local_port):
             tunnel.ensure_service(cfg, s.id)
         return actions.run_ssh_here(cfg, s)
     tunnel.ensure_service(cfg, s.id)
@@ -67,7 +67,7 @@ def cmd_status(cfg: Config, a) -> int:
     print("Tunnel:", "running" if running else "stopped")
     for s in cfg.services:
         mark = "x" if s.enabled else " "
-        up = "up" if s.id in running and tunnel.port_open(s.local_port) else ("..." if s.id in running else "")
+        up = "up" if s.id in running and tunnel.listening(s.local_port) else ("..." if s.id in running else "")
         print(f" [{mark}] {s.id:16} {s.local_port:6}  {s.type:8} {s.target():34} {up}")
     return 0
 
