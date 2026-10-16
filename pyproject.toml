@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hoppla"
+dynamic = ["version"]
+description = "SSH tunnels, SOCKS browsers and desktop shortcuts for reaching PSI through the hopx gateway"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+hoppla = "hoppla.cli:main"
+
+[project.gui-scripts]
+hoppla-gui = "hoppla.cli:main"
+
+[tool.setuptools]
+packages = ["hoppla"]
+
+[tool.setuptools.dynamic]
+version = { attr = "hoppla.__version__" }
