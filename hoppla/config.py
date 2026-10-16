@@ -12,7 +12,7 @@ from pathlib import Path
 APP_NAME = "hoppla"
 APP_TITLE = "Hoppla"
 DEFAULT_GATEWAY = "hopx.psi.ch"
-CONFIG_VERSION = 2
+CONFIG_VERSION = 3
 
 SERVICE_TYPES = {
     "socks": "SOCKS proxy (for browsers)",
@@ -79,8 +79,8 @@ def presets() -> list[Service]:
         Service("jupyter-ra", "Jupyter on Ra", "forward", 9789, "jupytera.psi.ch", 443, via="ssh-ra",
                 open="url", url="https://localhost:{port}/"),
         Service("socks", "Web proxy on hopx (PSI staff)", "socks", 1080),
-        Service("rdp-winterm3", "Windows terminal server, RDP (PSI staff)", "forward", 9022,
-                "winterm3.psi.ch", 3389, open="rdp"),
+        Service("rdp-winterm", "Windows terminal server, RDP (PSI staff)", "forward", 9022,
+                "winterm6.psi.ch", 3389, open="rdp"),
     ]
 
 
@@ -158,6 +158,9 @@ class Config:
         cfg = cls(**{k: v for k, v in d.items() if k in known})
         if "services" in d and d.get("version", 1) >= 2:
             cfg.services = [Service.from_dict(s) for s in d["services"]]
+            for s in cfg.services:  # version 3: winterm3 was replaced by winterm6
+                if s.remote_host == "winterm3.psi.ch":
+                    s.remote_host = "winterm6.psi.ch"
         cfg.version = CONFIG_VERSION  # version 1 lists assumed forwards directly on hopx: use new presets
         return cfg
 

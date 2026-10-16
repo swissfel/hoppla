@@ -42,6 +42,9 @@ def ask(prompt: str, label: str = "", root=None) -> str | None:
 
     own_root = root is None
     root = root or tk.Tk()
+    if own_root:
+        from .platforms import bring_to_front
+        bring_to_front()
     root.title(f"{APP_TITLE} login" + (f" - {label}" if label else ""))
     root.resizable(False, False)
     root.attributes("-topmost", True)
@@ -99,15 +102,12 @@ def main(argv: list[str]) -> int:
         try:
             cancel_flag().touch()
         except OSError:
-            pass
-        _kill_parent_ssh()
+            pass  # the session runner sees the flag and stops ssh
         return 1
-    sys.stdout.write(answer + "\n")
-    sys.stdout.flush()
+    data = answer.encode("utf-8") + b"\n"  # not the console code page (umlauts in passwords)
+    if sys.stdout is not None and hasattr(sys.stdout, "buffer"):
+        sys.stdout.buffer.write(data)
+        sys.stdout.flush()
+    else:
+        os.write(1, data)
     return 0
-
-
-def _kill_parent_ssh() -> None:
-    """Cancel means stop the login, not ssh asking again up to three times."""
-    from .platforms import kill_pid
-    kill_pid(os.getppid())

@@ -74,6 +74,7 @@ def pid_alive(pid: int) -> bool:
         import ctypes
 
         kernel32 = ctypes.windll.kernel32
+        kernel32.OpenProcess.restype = ctypes.c_void_p
         handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
         if not handle:
             return False
@@ -88,6 +89,31 @@ def pid_alive(pid: int) -> bool:
     except PermissionError:
         return True
     return True
+
+
+def process_name(pid: int) -> str:
+    """Lower-case file name of the program running as `pid`; "" if unknown."""
+    try:
+        if WINDOWS:
+            import ctypes
+
+            kernel32 = ctypes.windll.kernel32
+            kernel32.OpenProcess.restype = ctypes.c_void_p
+            handle = kernel32.OpenProcess(0x1000, False, pid)
+            if not handle:
+                return ""
+            buf = ctypes.create_unicode_buffer(1024)
+            size = ctypes.c_ulong(len(buf))
+            ok = kernel32.QueryFullProcessImageNameW(ctypes.c_void_p(handle), 0, buf, ctypes.byref(size))
+            kernel32.CloseHandle(ctypes.c_void_p(handle))
+            return Path(buf.value).name.lower() if ok else ""
+        proc = Path(f"/proc/{pid}/exe")
+        if proc.exists():
+            return Path(os.path.realpath(proc)).name.lower()
+        out = subprocess.run(["ps", "-p", str(pid), "-o", "comm="], capture_output=True, text=True, timeout=5)
+        return Path(out.stdout.strip()).name.lower()
+    except (OSError, subprocess.SubprocessError, AttributeError):
+        return ""
 
 
 def kill_pid(pid: int) -> None:
@@ -109,6 +135,11 @@ def detached_popen(argv: list[str], **kw) -> subprocess.Popen:
                             stderr=subprocess.DEVNULL, close_fds=True, **kw)
 
 
+def translocated() -> bool:
+    """macOS runs apps started from Downloads from a temporary read-only copy."""
+    return MACOS and "/AppTranslocation/" in sys.executable
+
+
 def ensure_console(title: str | None = None) -> None:
     """Give a windowless (pythonw / frozen --windowed) process a console on Windows."""
     if not WINDOWS:
@@ -124,6 +155,28 @@ def ensure_console(title: str | None = None) -> None:
         sys.stderr = sys.stdout
     if title:
         kernel32.SetConsoleTitleW(title)
+
+
+def bring_to_front() -> None:
+    """On macOS, activate this process so its (Tk) windows get focus; no-op elsewhere."""
+    if not MACOS:
+        return
+    try:
+        import ctypes
+        import ctypes.util
+
+        objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc"))
+        ctypes.cdll.LoadLibrary(ctypes.util.find_library("AppKit"))
+        objc.objc_getClass.restype = ctypes.c_void_p
+        objc.sel_registerName.restype = ctypes.c_void_p
+        send = objc.objc_msgSend
+        send.restype = ctypes.c_void_p
+        send.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        app = send(objc.objc_getClass(b"NSApplication"), objc.sel_registerName(b"sharedApplication"))
+        send.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_bool]
+        send(app, objc.sel_registerName(b"activateIgnoringOtherApps:"), True)
+    except Exception:  # noqa: BLE001 - cosmetic only
+        pass
 
 
 def _usable(stream) -> bool:
@@ -194,8 +247,10 @@ def open_path(target: str) -> None:
 def desktop_dir() -> Path:
     if WINDOWS:
         try:
-            out = subprocess.run(["powershell", "-NoProfile", "-Command", "[Environment]::GetFolderPath('Desktop')"],
-                                 capture_output=True, text=True, timeout=20,
+            out = subprocess.run(["powershell", "-NoProfile", "-Command",
+                                  "[Console]::OutputEncoding=[Text.Encoding]::UTF8; "
+                                  "[Environment]::GetFolderPath('Desktop')"],
+                                 capture_output=True, text=True, encoding="utf-8", timeout=20,
                                  creationflags=subprocess.CREATE_NO_WINDOW)
             if out.stdout.strip():
                 return Path(out.stdout.strip())

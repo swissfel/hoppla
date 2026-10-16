@@ -38,6 +38,13 @@ def install() -> list[Path]:
     shutil.copy2(sys.executable, tmp)
     if not WINDOWS:
         tmp.chmod(0o755)
-    os.replace(tmp, t)  # also works while an older copy is running (Linux)
+    if WINDOWS and t.exists():  # a running exe cannot be replaced, but it can be renamed
+        old = t.with_name(t.stem + ".old.exe")
+        try:
+            old.unlink()
+        except OSError:
+            pass
+        t.rename(old)
+    os.replace(tmp, t)  # on Linux this also works while an older copy is running
     platforms.EXECUTABLE = str(t)  # shortcuts made from now on point to the installed copy
     return [t, *shortcuts.create(APP_TITLE, [], "gui")]

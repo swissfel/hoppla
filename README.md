@@ -8,6 +8,11 @@ SSH logins, and desktop icons that do it with one click. No SSH knowledge needed
 
 You log in **once** per session (PSI password + MFA); all selected services share that connection.
 
+> **Unofficial tool, use at your own risk.** Hoppla is a personal project, not a PSI IT service. It comes
+> without warranty or support (see [LICENSE](LICENSE), MIT). It only automates what you could do with
+> `ssh` yourself and does not bypass any access rule: you need a valid PSI account, MFA, and access
+> rights to the targets (e.g. the Ra cluster). Follow PSI's computing rules when using it.
+
 ## Download
 
 | System | Download |
@@ -29,6 +34,8 @@ Older versions: [all releases](https://github.com/swissfel/hoppla/releases).
   go to *System Settings > Privacy & Security* and click *Open Anyway*.
 - **Linux**: `chmod +x hoppla-linux-x86_64 && ./hoppla-linux-x86_64`, and accept the offer to
   install (copies to `~/.local/bin/hoppla` and adds a menu entry). Needs a desktop session.
+  Find it (and the icons you create) via the Super key by typing "Hoppla"; right-click > *Pin to Dash*
+  to keep it in the dock. Icons on the GNOME desktop need right-click > *Allow Launching* once.
 
 Hoppla uses the OpenSSH client that is part of Windows 10/11, macOS and Linux. If Windows says ssh
 is missing: *Settings > System > Optional features > Add a feature > OpenSSH Client*.
@@ -80,6 +87,8 @@ dialogs do not appear (older OpenSSH, e.g. early Windows 10 builds; *Automatic* 
 - **"The gateway refused a connection to one of the selected targets"**: you have no access to that
   host/port. External users need cluster access (e.g. Ra) requested by their PSI contact.
 - **"The gateway does not allow one of the selected targets"**: a service points to a host/port the gateway refuses.
+- **Windows: no password dialog appears / connection ends at once**: choose *Ask password/OTP in:
+  Terminal window* and connect again (please report it, the dialog mode is less tested on Windows).
 - **Remote desktop on Linux**: install Remmina or FreeRDP. On macOS: install *Windows App* from the App Store.
 - **`https://localhost:PORT` shows a certificate warning**: expected for forwarded web pages; the PSI browser avoids it.
 
@@ -161,3 +170,8 @@ Linux and the `.pyz`, and publishes them as a GitHub Release. Bump `__version__`
 
 Code signing (Apple Developer ID + notarization, Windows Authenticode) would remove the first-start
 warnings; it can be added to the workflow once certificates exist.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Provided as is, without warranty or support; use at your own risk.
+Hoppla is not an official PSI product.

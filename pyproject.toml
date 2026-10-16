@@ -5,7 +5,8 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hoppla"
 dynamic = ["version"]
-description = "SSH tunnels, SOCKS browsers and desktop shortcuts for reaching PSI through the hopx gateway"
+description = "Hoppla: SSH tunnels, a PSI browser and desktop icons for reaching PSI through the hopx gateway"
+license = "MIT"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = []

@@ -56,6 +56,8 @@ def cmd_ssh(cfg: Config, a) -> int:
 
 def cmd_start(cfg: Config, a) -> int:
     if a.here:
+        from .platforms import ensure_console
+        ensure_console("Hoppla")
         return tunnel.run_session(cfg, a.with_)
     mode = tunnel.start(cfg, a.with_)
     print("Log in in the window that just opened." if mode == "app" else "A terminal window opened for the login.")
