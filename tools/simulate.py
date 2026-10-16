@@ -6,6 +6,7 @@
 Uses a throw-away settings folder; your real settings and the real hopx are not touched.
 The password/MFA/yes-no dialogs are answered by a small script instead of a person;
 set HOPPLA_SIM_PASSWORD to a wrong value to see the failed-login handling.
+HOPPLA_SIM_SYSPROXY=1 also switches on the macOS system proxy (with a fake networksetup).
 HOPPLA_SIM_DOUBLE=1 tests a double hop instead: hopx -> saresb-gw -> saresb-vcons-03
 (a SOCKS proxy on the last host, and a real ssh login there through both hops).
 """
@@ -59,6 +60,19 @@ def main() -> int:
         ]
     else:
         cfg.service("jupyter-ra").enabled = True
+    sysproxy_test = os.environ.get("HOPPLA_SIM_SYSPROXY") == "1"
+    if sysproxy_test:  # pretend to be a Mac, with a fake networksetup (never the real one)
+        import json as _json
+        from tests.test_sysproxy import FAKE
+        fake_bin = home / "bin"
+        fake_bin.mkdir()
+        (fake_bin / "networksetup").write_text(FAKE.format(python=sys.executable))
+        (fake_bin / "networksetup").chmod(0o755)
+        netstate = home / "netsetup.json"
+        netstate.write_text(_json.dumps({"Wi-Fi": {"url": "", "enabled": False}}))
+        os.environ["PATH"] = f"{fake_bin}{os.pathsep}{os.environ['PATH']}"
+        os.environ["FAKE_NETSETUP_STATE"] = str(netstate)
+        cfg.system_proxy = True
     for s in cfg.services:  # own ports, so a real Hoppla connection can stay open meanwhile
         s.local_port += 10000
     cfg.save()
@@ -93,6 +107,13 @@ def main() -> int:
         out = subprocess.run(["curl", "-s", "--max-time", "10", "--socks5-hostname",
                               f"127.0.0.1:{socks.local_port}", "http://intranet.psi.ch/test"],
                              capture_output=True, text=True)
+        if sysproxy_test:
+            time.sleep(1)
+            wifi = _json.loads(netstate.read_text())["Wi-Fi"]
+            pac = urllib.request.urlopen(wifi["url"], timeout=5).read().decode() if wifi["enabled"] else ""
+            print("system proxy while connected:", wifi, "| PAC sends PSI to",
+                  pac.split('return "', 1)[1].split(";")[0] if pac else None)
+            ok &= f"SOCKS5 127.0.0.1:{socks.local_port}" in pac
         print(f"via SOCKS proxy on {'console 03' if double else 'Ra'}:", out.stdout.strip() or out.stderr.strip())
         ok &= "inside PSI" in out.stdout
         if double:  # what "Open selected service" runs, here with a command instead of a shell
@@ -109,6 +130,10 @@ def main() -> int:
         tunnel.stop()
         time.sleep(1)
         print("after stop:", tunnel.last_result().get("message"), "| still running:", bool(tunnel.read_state()))
+        if sysproxy_test:
+            wifi = _json.loads(netstate.read_text())["Wi-Fi"]
+            print("system proxy after disconnect:", "off (restored)" if not wifi["enabled"] else f"STILL ON {wifi}")
+            ok &= not wifi["enabled"]
         print("session.log:\n" + _log(home).strip()[-800:])
     print("OK" if ok else "FAILED")
     return 0 if ok else 1

@@ -93,6 +93,7 @@ class Config:
     browser: str = ""
     login_mode: str = "auto"  # auto | app (password dialogs) | terminal
     pac_only_psi: bool = False
+    system_proxy: bool = False  # macOS: PSI addresses of all apps through the tunnel (sysproxy.py)
     psi_domains: list[str] = field(default_factory=lambda: ["psi.ch"])
     psi_networks: list[str] = field(default_factory=lambda: ["129.129."])
     start_url: str = "https://www.psi.ch/"

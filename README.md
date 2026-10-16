@@ -71,6 +71,21 @@ Other programs can use the SOCKS5 proxy `127.0.0.1:8989` (or the port shown in t
 External users reach PSI through a cluster they have access to (by default Ra): the web proxy and
 Jupyter run *through* Ra. Entries marked *(PSI staff)* run directly on hopx and only work for PSI staff.
 
+### Safari and other Mac apps (optional, macOS)
+
+Safari cannot be started with its own proxy like the other browsers; it always uses the Mac's system
+proxy. Tick **PSI addresses for Safari and all Mac apps (system proxy)** to let Hoppla set it while you
+are connected. Hoppla first explains what this does; in short:
+
+- **Pros:** Safari, Mail and other apps reach PSI pages; your usual browser, bookmarks and passwords are used.
+  Only PSI addresses (`*.psi.ch`, short host names, `129.129.*`) go through the tunnel, everything else stays direct.
+- **Cons:** your network settings are changed while connected (macOS may ask for your administrator password);
+  an existing proxy configuration (e.g. from your employer) is replaced meanwhile; after a crash the setting
+  stays until Hoppla's next start cleans it up (PSI addresses then don't load, other sites are not affected).
+  Experimental. It needs a *Web proxy* service ticked.
+
+On Windows and Linux, use the Hoppla browser (Edge, Chrome, Firefox, ...) instead.
+
 ### Hosts behind other hosts (double hops)
 
 Some machines are only reachable from another internal host, e.g. hopx → `saresb-gw` → `saresb-vcons-03`.
@@ -126,6 +141,7 @@ hoppla/
   actions.py    open RDP/URL/SSH, optional ~/.ssh/config aliases
   shortcuts.py  .lnk (Windows), .app (macOS), .desktop (Linux)
   install.py    copy the binary to a permanent place on first start
+  sysproxy.py   macOS system proxy (PAC served on 127.0.0.1) for Safari, with restore and crash cleanup
   gui.py, cli.py
 ```
 

@@ -46,6 +46,8 @@ jobs:
           grep -q "Login failed" wrong.txt
           sleep 6
           HOPPLA_SIM_DOUBLE=1 python tools/simulate.py
+          sleep 6
+          HOPPLA_SIM_SYSPROXY=1 python tools/simulate.py
       - if: always()
         run: cat fake.log
 
