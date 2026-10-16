@@ -114,6 +114,8 @@ def cmd_config(cfg: Config, a) -> int:
         cfg.browser = a.browser
     if a.login:
         cfg.login_mode = a.login
+    if a.system_proxy:
+        cfg.system_proxy = a.system_proxy == "on"
     cfg.save()
     from .config import config_file
     print("saved", config_file())
@@ -164,6 +166,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--gateway")
     s.add_argument("--browser", choices=list(browsers.NAMES))
     s.add_argument("--login", choices=["auto", "app", "terminal"], help="where password/OTP are asked")
+    s.add_argument("--system-proxy", choices=["on", "off"],
+                   help="macOS: PSI addresses of all apps (Safari, ...) through the tunnel while connected")
     s.add_argument("--enable", action="append", metavar="ID")
     s.add_argument("--disable", action="append", metavar="ID")
     return p

@@ -378,6 +378,7 @@ class Session:
         self.procs: list[subprocess.Popen] = []
         self.log = None
         self.lock = threading.Lock()
+        self.pac = None  # sysproxy.PacServer while the system proxy is on
 
     # -- processes
     def _popen(self, cmd: list[str], label: str, interactive: bool = False) -> subprocess.Popen:
@@ -474,10 +475,39 @@ class Session:
             services = todo.pop(host_id)
             if self._start_inner(cfg.service(host_id), services):
                 ready |= {s.id for s in services}
+        self._system_proxy_on()
         if not self.background:
             _summary(cfg, self.plan, self.out)
         gw.wait()
+        self._system_proxy_off()
         return True
+
+    def _system_proxy_on(self) -> None:
+        from . import browsers, sysproxy
+        if not (self.cfg.system_proxy and sysproxy.available()):
+            return
+        port = sysproxy.socks_port(self.cfg, [s.id for s in self.plan.services if listening(s.local_port)])
+        if port is None:
+            self.out("System proxy not set: no web proxy service is connected.")
+            return
+        try:
+            self.pac = sysproxy.PacServer(browsers.pac_script(self.cfg, port))
+            sysproxy.enable(self.pac.url)
+            self.out("PSI addresses of all apps now go through the tunnel (system proxy).")
+        except Exception as e:  # noqa: BLE001 - the tunnel itself keeps working
+            self.out(f"System proxy not set: {e}")
+            self._system_proxy_off()
+
+    def _system_proxy_off(self) -> None:
+        from . import sysproxy
+        if self.pac is None:
+            return
+        try:
+            sysproxy.restore()
+        except Exception as e:  # noqa: BLE001
+            self.out(f"Could not restore the network settings: {e}")
+        self.pac.close()
+        self.pac = None
 
     def run(self) -> int:
         problems = check(self.cfg, self.plan)
@@ -489,6 +519,8 @@ class Session:
             self.out("Cannot start:\n  " + "\n  ".join(problems))
             _write_result("\n".join(problems), failed=True)
             return 2
+        from .sysproxy import cleanup_leftovers
+        cleanup_leftovers()
         if not WINDOWS:
             signal.signal(signal.SIGTERM, _sigterm)
         try:
@@ -529,6 +561,7 @@ class Session:
             self.out("\nStopping.")
             return 0
         finally:
+            self._system_proxy_off()
             _terminate(self.procs)
             clear_state()
             if self.log:

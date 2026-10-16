@@ -8,7 +8,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from . import __version__, actions, browsers, shortcuts, tunnel
-from .config import APP_TITLE, LOGIN_MODES, OPEN_ACTIONS, SERVICE_TYPES, WINDOWS, Config, Service, load, presets
+from .config import APP_TITLE, LOGIN_MODES, MACOS, OPEN_ACTIONS, SERVICE_TYPES, WINDOWS, Config, Service, load, presets
 from .platforms import bring_to_front, find_ssh, ssh_install_hint
 
 CHECK, UNCHECK = "☑", "☐"
@@ -121,6 +121,10 @@ class App:
         self.status = tk.StringVar()
         self.tunnel_state = tk.StringVar(value="...")
         self.pac = tk.BooleanVar(value=self.cfg.pac_only_psi)
+        self.sysproxy = tk.BooleanVar(value=self.cfg.system_proxy)
+        if not tunnel.read_state():
+            from .sysproxy import cleanup_leftovers
+            cleanup_leftovers()  # a crashed session may have left the Mac's proxy setting behind
         self.login = tk.StringVar(value=LOGIN_MODES.get(self.cfg.login_mode, LOGIN_MODES["auto"]))
         self.was_running = bool(tunnel.read_state())
         self.pending = 0.0  # time of a start request whose runner has not reported yet
@@ -188,6 +192,10 @@ class App:
         ttk.Button(use, text="Open browser", command=self.open_browser).grid(row=0, column=3, padx=6)
         ttk.Button(use, text="Open selected service", command=self.open_selected).grid(row=1, column=1, columnspan=2,
                                                                                          sticky="w", padx=6, pady=(6, 0))
+        if MACOS:
+            ttk.Checkbutton(use, text="PSI addresses for Safari and all Mac apps (system proxy) ...",
+                            variable=self.sysproxy, command=self.toggle_sysproxy).grid(
+                row=2, column=1, columnspan=3, sticky="w", padx=6, pady=(6, 0))
 
         # shortcuts
         sc = ttk.LabelFrame(main, text="Desktop icons and SSH aliases", padding=8)
@@ -235,6 +243,7 @@ class App:
         self.cfg.user = self.user.get().strip()
         self.cfg.gateway = self.gateway.get().strip()
         self.cfg.pac_only_psi = self.pac.get()
+        self.cfg.system_proxy = self.sysproxy.get()
         self.cfg.login_mode = {v: k for k, v in LOGIN_MODES.items()}.get(self.login.get(), "auto")
         inv = {v: k for k, v in browsers.NAMES.items()}
         self.cfg.browser = inv.get(self.browser.get(), self.cfg.browser)
@@ -325,6 +334,15 @@ class App:
             self.cfg.services = presets()
             self.save()
             self.refresh_tree()
+
+    def toggle_sysproxy(self):
+        from .sysproxy import EXPLANATION
+        if self.sysproxy.get():
+            if not messagebox.askyesno(APP_TITLE, EXPLANATION, icon="question"):
+                self.sysproxy.set(False)
+        self.save()
+        if tunnel.read_state():
+            self.status.set("Takes effect at the next Connect.")
 
     # --------------------------------------------------------- tunnel -------
     def poll(self):
