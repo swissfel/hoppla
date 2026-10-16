@@ -9,7 +9,7 @@ from tkinter import messagebox, ttk
 
 from . import __version__, actions, browsers, shortcuts, tunnel
 from .config import APP_TITLE, LOGIN_MODES, OPEN_ACTIONS, SERVICE_TYPES, WINDOWS, Config, Service, load, presets
-from .platforms import find_ssh, ssh_install_hint
+from .platforms import bring_to_front, find_ssh, ssh_install_hint
 
 CHECK, UNCHECK = "☑", "☐"
 
@@ -208,6 +208,11 @@ class App:
 
     def offer_install(self):
         from . import install
+        from .platforms import translocated
+        if translocated():
+            messagebox.showwarning(APP_TITLE, "Please move Hoppla into your Applications folder and start "
+                                              "it from there. Desktop icons only work from there.")
+            return
         if install.is_installed():
             return
         if messagebox.askyesno(APP_TITLE, "Install Hoppla for your user account?\n\n"
@@ -260,10 +265,19 @@ class App:
         self.tree.delete(*self.tree.get_children())
         for s in self.cfg.services:
             self.tree.insert("", "end", iid=s.id, values=(CHECK if s.enabled else UNCHECK, s.name, s.type,
-                                                         s.local_port, s.target(), ""))
+                                                         s.local_port, self.target_text(s), ""))
         if focus in self.tree.get_children():
             self.tree.focus(focus)
             self.tree.selection_set(focus)
+
+    def target_text(self, s: Service) -> str:
+        text = s.target()
+        if s.type != "ssh" and s.via != "gateway":
+            try:
+                text = text.replace(f"via {s.via}", f"via {self.cfg.service(s.via).remote_host}")
+            except KeyError:
+                pass
+        return text
 
     def on_click(self, event):
         if self.tree.identify_column(event.x) == "#1" and self.tree.identify_region(event.x, event.y) == "cell":
@@ -465,6 +479,7 @@ def run_gui() -> int:
         except Exception:  # noqa: BLE001
             pass
     root = tk.Tk()
+    bring_to_front()
     style = ttk.Style(root)
     for theme in ("vista", "aqua", "clam"):  # first available native-looking theme
         if theme in style.theme_names():

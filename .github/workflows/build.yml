@@ -17,23 +17,47 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: python -m unittest discover -s tests -v
 
+  # End-to-end: real ssh + Hoppla against the simulated hopx and Ra (tools/fake_hopx.py).
+  simulate:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install paramiko
+      - name: Simulated hopx session
+        run: |
+          python tools/fake_hopx.py > fake.log 2>&1 &
+          sleep 3
+          python tools/simulate.py
+          sleep 6
+          HOPPLA_SIM_PASSWORD=wrong python tools/simulate.py | tee wrong.txt || true
+          grep -q "Login failed" wrong.txt
+      - if: always()
+        run: cat fake.log
+
   binary:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-    needs: test
+    needs: [test, simulate]
     strategy:
       fail-fast: false
       matrix:
         os: [windows-latest, macos-15, macos-15-intel, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: python -m pip install "pyinstaller>=6.10"
@@ -47,11 +71,11 @@ jobs:
             dist/hoppla-linux-*
 
   zipapp:
-    needs: test
+    needs: [test, simulate]
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: python3 build.py zipapp
       - uses: actions/upload-artifact@v4
         with:

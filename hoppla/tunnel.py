@@ -33,7 +33,7 @@ from pathlib import Path
 
 from .config import WINDOWS, Config, Service, config_dir, state_file
 from .platforms import (PlatformError, detached_popen, find_ssh, kill_pid, open_in_terminal, pid_alive,
-                        self_command)
+                        process_name, self_command)
 
 KEEPALIVE = ["-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3"]
 LOCALHOST = "127.0.0.1"
@@ -134,7 +134,7 @@ def app_login_supported() -> bool:
 
 
 def login_mode(cfg: Config) -> str:
-    if cfg.login_mode in ("app", "terminal"):
+    if cfg.login_mode == "terminal" or (cfg.login_mode == "app" and app_login_supported()):
         return cfg.login_mode
     return "app" if app_login_supported() else "terminal"
 
@@ -194,7 +194,13 @@ def read_state() -> dict:
         state = json.loads(state_file().read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
-    return state if pid_alive(state.get("runner_pid", 0)) else {}
+    pid = state.get("runner_pid", 0)
+    if not pid_alive(pid):
+        return {}
+    # after a crash or reboot the pid may belong to another program now
+    if state.get("runner_exe") and process_name(pid) not in ("", state["runner_exe"]):
+        return {}
+    return state
 
 
 def write_state(state: dict) -> None:
@@ -313,6 +319,9 @@ YES_NO = re.compile(r"\((?:y|yes)\s*/\s*(?:n|no)\)|\[(?:y|yes)\s*/\s*(?:n|no)\]"
 
 def _wait_ports(proc: subprocess.Popen, ports: list[int], settle: float = 0) -> bool:
     while proc.poll() is None:
+        if cancel_flag().exists():  # "Cancel" in a login dialog
+            proc.terminate()
+            return False
         if all(listening(p) for p in ports):
             time.sleep(settle)
             return proc.poll() is None
@@ -411,6 +420,7 @@ class Session:
     def _save(self) -> None:
         write_state({
             "runner_pid": os.getpid(),
+            "runner_exe": process_name(os.getpid()),
             "ssh_pids": [p.pid for p in self.procs],
             "services": [s.id for s in self.plan.services],
             "mode": "app" if self.background else "terminal",

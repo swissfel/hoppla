@@ -9,10 +9,11 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from .config import APP_TITLE, MACOS, WINDOWS
-from .platforms import desktop_dir, self_command
+from .platforms import desktop_dir, self_command, translocated
 
 LINUX_ICONS = {"gui": "network-vpn", "tunnel": "network-vpn", "browser": "web-browser",
                "ssh": "utilities-terminal", "rdp": "preferences-desktop-remote-desktop"}
@@ -20,11 +21,14 @@ LINUX_ICONS = {"gui": "network-vpn", "tunnel": "network-vpn", "browser": "web-br
 
 def create(label: str, args: list[str], kind: str = "tunnel", desktop: bool = True) -> list[Path]:
     """Create a launcher named `label` running `hoppla <args>`; returns created paths."""
+    if translocated():
+        raise RuntimeError("Move Hoppla to your Applications folder first and start it from there; "
+                           "otherwise the icons stop working after a restart.")
     argv = self_command(*args, gui=True)
     if WINDOWS:
         return _windows(label, argv, desktop)
     if MACOS:
-        return _macos(label, argv, desktop)
+        return _macos(label, argv, desktop, kind)
     return _linux(label, argv, kind, desktop)
 
 
@@ -44,6 +48,7 @@ def _windows(label: str, argv: list[str], desktop: bool) -> list[Path]:
         folders.insert(0, "[Environment]::GetFolderPath('Desktop')")
     script = f"""
 $ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
 $sh = New-Object -ComObject WScript.Shell
 foreach ($dir in @({', '.join(folders)})) {{
   New-Item -ItemType Directory -Force -Path $dir | Out-Null
@@ -59,7 +64,7 @@ foreach ($dir in @({', '.join(folders)})) {{
 """
     enc = base64.b64encode(script.encode("utf-16-le")).decode()
     out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", enc],
-                         capture_output=True, text=True, timeout=60,
+                         capture_output=True, text=True, encoding="utf-8", timeout=60,
                          creationflags=subprocess.CREATE_NO_WINDOW)
     if out.returncode:
         raise RuntimeError("Creating the shortcut failed:\n" + (out.stderr or out.stdout))
@@ -67,7 +72,15 @@ foreach ($dir in @({', '.join(folders)})) {{
 
 
 # ----------------------------------------------------------------- macOS ----
-def _macos(label: str, argv: list[str], desktop: bool) -> list[Path]:
+def _app_bundle() -> Path | None:
+    """The Hoppla.app we run from (frozen macOS build), if any."""
+    for parent in Path(sys.executable).parents:
+        if parent.suffix == ".app":
+            return parent
+    return None
+
+
+def _macos(label: str, argv: list[str], desktop: bool, kind: str) -> list[Path]:
     name = _safe_name(label)
     app = Path.home() / "Applications" / f"{name}.app"
     if app.exists():
@@ -75,7 +88,11 @@ def _macos(label: str, argv: list[str], desktop: bool) -> list[Path]:
     macos = app / "Contents" / "MacOS"
     macos.mkdir(parents=True)
     exe = macos / "launcher"
-    exe.write_text(f"#!/bin/sh\nexec {shlex.join(argv)}\n")
+    bundle = _app_bundle() if getattr(sys, "frozen", False) else None
+    if kind == "gui" and bundle:  # start the real app, so it gets a Dock icon and focus
+        exe.write_text(f"#!/bin/sh\nexec /usr/bin/open -a {shlex.quote(str(bundle))}\n")
+    else:
+        exe.write_text(f"#!/bin/sh\nexec {shlex.join(argv)}\n")
     exe.chmod(0o755)
     slug = re.sub(r"[^A-Za-z0-9]+", "-", name).strip("-").lower()
     with open(app / "Contents" / "Info.plist", "wb") as fh:

@@ -43,6 +43,14 @@ class TestConfig(Base):
         self.assertTrue(any("user" in p for p in probs))
         self.assertTrue(any("also used" in p for p in probs))
 
+    def test_migrates_old_configs(self):
+        v1 = {"user": "u", "version": 1, "services": [{"id": "x", "name": "x", "type": "socks", "local_port": 1}]}
+        self.assertEqual([s.id for s in config.Config.from_dict(v1).services], [s.id for s in config.presets()])
+        v2 = {"user": "u", "version": 2, "services": [
+            {"id": "rdp-winterm3", "name": "RDP", "type": "forward", "local_port": 9022,
+             "remote_host": "winterm3.psi.ch", "remote_port": 3389}]}
+        self.assertEqual(config.Config.from_dict(v2).services[0].remote_host, "winterm6.psi.ch")
+
     def test_new_id_unique(self):
         self.assertEqual(self.cfg.new_id("SSH to Ra"), "ssh-to-ra")
         self.cfg.services.append(config.Service("ssh-to-ra", "x", "ssh", 2300, "h"))
@@ -51,12 +59,12 @@ class TestConfig(Base):
 
 class TestCommands(Base):
     def test_gateway_command_single_connection(self):
-        services = self.cfg.selected(["ssh-ra", "rdp-winterm3", "socks"])
+        services = self.cfg.selected(["ssh-ra", "rdp-winterm", "socks"])
         cmd = tunnel.gateway_command(self.cfg, services, "ssh")
         self.assertEqual(cmd[-1], "tester@hopx.psi.ch")
         self.assertIn("127.0.0.1:1080", cmd)
         self.assertIn("127.0.0.1:2201:ra.psi.ch:22", cmd)
-        self.assertIn("127.0.0.1:9022:winterm3.psi.ch:3389", cmd)
+        self.assertIn("127.0.0.1:9022:winterm6.psi.ch:3389", cmd)
 
     def test_inner_connection_carries_proxy_and_forward(self):
         self.cfg.service("jupyter-ra").enabled = True

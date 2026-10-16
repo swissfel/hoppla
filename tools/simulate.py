@@ -35,6 +35,11 @@ else:
 '''
 
 
+def _log(home: Path) -> str:
+    log = home / "session.log"
+    return log.read_text(errors="replace") if log.exists() else "(no session.log)"
+
+
 def main() -> int:
     home = Path(tempfile.mkdtemp(prefix="hoppla-sim-"))
     os.environ["HOPPLA_HOME"] = str(home)
@@ -42,6 +47,8 @@ def main() -> int:
 
     cfg = config.Config(user="tester", gateway="127.0.0.1", gateway_port=2022, login_mode="app")
     cfg.service("jupyter-ra").enabled = True
+    for s in cfg.services:  # own ports, so a real Hoppla connection can stay open meanwhile
+        s.local_port += 10000
     cfg.save()
     answers = home / "answers.py"
     answers.write_text(ANSWERS.format(python=sys.executable))
@@ -68,7 +75,7 @@ def main() -> int:
               if (home / "prompts.txt").exists() else [])
         if runner.poll() is not None:
             print("session ended:", tunnel.last_result())
-            print((home / "session.log").read_text()[-1500:])
+            print(_log(home)[-1500:])
             return 1
         out = subprocess.run(["curl", "-s", "--max-time", "10", "--socks5-hostname",
                               f"127.0.0.1:{socks.local_port}", "http://intranet.psi.ch/test"],
@@ -82,7 +89,7 @@ def main() -> int:
         tunnel.stop()
         time.sleep(1)
         print("after stop:", tunnel.last_result().get("message"), "| still running:", bool(tunnel.read_state()))
-        print("session.log:\n" + (home / "session.log").read_text().strip()[-800:])
+        print("session.log:\n" + _log(home).strip()[-800:])
     print("OK" if ok else "FAILED")
     return 0 if ok else 1
 
