@@ -12,9 +12,13 @@ from .platforms import find_ssh, ssh_install_hint
 
 
 def _pick_socks(cfg: Config, sid: str | None):
+    """The proxy for the browser: as asked, as chosen in the window, else the first running/ticked one."""
     if sid:
         return cfg.service(sid)
     socks = [s for s in cfg.services if s.type == "socks"]
+    chosen = [s for s in socks if s.id == cfg.browser_proxy]
+    if chosen:
+        return chosen[0]
     if not socks:
         raise tunnel.TunnelError("No SOCKS proxy service is configured.")
     running = set(tunnel.running_services())
@@ -83,6 +87,9 @@ def cmd_shortcut(cfg: Config, a) -> int:
     elif what == "browser":
         name = a.target or cfg.browser or next(iter(browsers.detect()), "firefox")
         label, args, kind = f"PSI {browsers.NAMES.get(name, name)}", ["browser", name], "browser"
+        if cfg.browser_proxy:
+            label += f" ({cfg.service(cfg.browser_proxy).name})"
+            args += ["--service", cfg.browser_proxy]
     else:
         s = cfg.service(a.target or "")
         label = f"PSI {s.name}"

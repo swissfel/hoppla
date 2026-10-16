@@ -22,7 +22,7 @@ class ServiceDialog(tk.Toplevel):
         self.resizable(False, False)
         self.result: Service | None = None
         self.cfg, self.orig = cfg, service
-        s = service or Service("", "", "forward", 0)
+        s = service or Service("", "", "ssh", 0, remote_port=22)  # most new services are SSH hosts
 
         self.v = {
             "name": tk.StringVar(value=s.name),
@@ -92,6 +92,15 @@ class ServiceDialog(tk.Toplevel):
         if not v["name"]:
             messagebox.showerror(APP_TITLE, "Please enter a name.", parent=self)
             return
+        if v["type"] == "forward" and rp == 22:
+            answer = messagebox.askyesnocancel(
+                APP_TITLE, "Port 22 is an SSH login.\n\nMake this an SSH login service? Then 'Open selected "
+                           "service' gives you a terminal on that host, and other services can run through it.\n\n"
+                           "Yes: SSH login (recommended)\nNo: keep it a plain port forward", parent=self)
+            if answer is None:
+                return
+            if answer:
+                v["type"] = "ssh"
         sid = self.orig.id if self.orig else self.cfg.new_id(v["name"])
         s = Service(sid, v["name"], v["type"], lp, v["remote_host"], rp,
                     via=v["via"] or "gateway", x11=self.x11.get() if v["type"] == "ssh" else False,
@@ -121,6 +130,7 @@ class App:
         self.status = tk.StringVar()
         self.tunnel_state = tk.StringVar(value="...")
         self.pac = tk.BooleanVar(value=self.cfg.pac_only_psi)
+        self.proxy_choice = tk.StringVar()
         self.sysproxy = tk.BooleanVar(value=self.cfg.system_proxy)
         if not tunnel.read_state():
             from .sysproxy import cleanup_leftovers
@@ -190,12 +200,15 @@ class App:
         ttk.Combobox(use, textvariable=self.browser, values=names, state="readonly", width=16).grid(row=0, column=1, padx=6)
         ttk.Checkbutton(use, text="Only PSI addresses through the tunnel", variable=self.pac).grid(row=0, column=2, padx=6)
         ttk.Button(use, text="Open browser", command=self.open_browser).grid(row=0, column=3, padx=6)
-        ttk.Button(use, text="Open selected service", command=self.open_selected).grid(row=1, column=1, columnspan=2,
+        ttk.Label(use, text="through").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        self.proxy_box = ttk.Combobox(use, textvariable=self.proxy_choice, state="readonly", width=28)
+        self.proxy_box.grid(row=1, column=1, columnspan=2, sticky="w", padx=6, pady=(6, 0))
+        ttk.Button(use, text="Open selected service", command=self.open_selected).grid(row=2, column=1, columnspan=2,
                                                                                          sticky="w", padx=6, pady=(6, 0))
         if MACOS:
             ttk.Checkbutton(use, text="PSI addresses for Safari and all Mac apps (system proxy) ...",
                             variable=self.sysproxy, command=self.toggle_sysproxy).grid(
-                row=2, column=1, columnspan=3, sticky="w", padx=6, pady=(6, 0))
+                row=3, column=1, columnspan=3, sticky="w", padx=6, pady=(6, 0))
 
         # shortcuts
         sc = ttk.LabelFrame(main, text="Desktop icons and SSH aliases", padding=8)
@@ -243,6 +256,8 @@ class App:
         self.cfg.user = self.user.get().strip()
         self.cfg.gateway = self.gateway.get().strip()
         self.cfg.pac_only_psi = self.pac.get()
+        if hasattr(self, "proxy_box"):
+            self.cfg.browser_proxy = self.proxy_ids().get(self.proxy_choice.get(), "")
         self.cfg.system_proxy = self.sysproxy.get()
         self.cfg.login_mode = {v: k for k, v in LOGIN_MODES.items()}.get(self.login.get(), "auto")
         inv = {v: k for k, v in browsers.NAMES.items()}
@@ -278,9 +293,25 @@ class App:
         for s in self.cfg.services:
             self.tree.insert("", "end", iid=s.id, values=(CHECK if s.enabled else UNCHECK, s.name, s.type,
                                                          s.local_port, self.target_text(s), ""))
+        if hasattr(self, "proxy_box"):
+            self.refresh_proxy_box()
         if focus in self.tree.get_children():
             self.tree.focus(focus)
             self.tree.selection_set(focus)
+
+    AUTO_PROXY = "automatic (first web proxy)"
+
+    def proxy_ids(self) -> dict[str, str]:
+        """Names shown in the 'through' box -> SOCKS service ids."""
+        ids = {self.AUTO_PROXY: ""}
+        ids.update({s.name: s.id for s in self.cfg.services if s.type == "socks"})
+        return ids
+
+    def refresh_proxy_box(self) -> None:
+        names = list(self.proxy_ids())
+        self.proxy_box.configure(values=names)
+        current = next((n for n, i in self.proxy_ids().items() if i and i == self.cfg.browser_proxy), self.AUTO_PROXY)
+        self.proxy_choice.set(current)
 
     def target_text(self, s: Service) -> str:
         text = s.target()
@@ -421,6 +452,12 @@ class App:
         except tunnel.TunnelError as e:
             self.error(e)
             return
+        self.launch_browser(cfg, socks)
+
+    def launch_browser(self, cfg: Config, socks: Service):
+        if not cfg.browser or cfg.browser not in self.found:
+            messagebox.showerror(APP_TITLE, "No supported browser found (Firefox, Chrome, Edge, Chromium, Brave).")
+            return
         self.status.set(f"Starting {browsers.NAMES[cfg.browser]} via '{socks.name}'...")
 
         def run():
@@ -433,14 +470,24 @@ class App:
         if not s:
             return
         cfg = self.save()
-        if s.type == "socks":
-            messagebox.showinfo(APP_TITLE, f"Use 'Open browser' for proxies, or set SOCKS5 127.0.0.1:{s.local_port} "
-                                           "in any program.")
+        if s.type == "socks":  # a web proxy: open the browser through it
+            self.launch_browser(cfg, s)
             return
         if s.type == "forward" and s.open == "none":
-            messagebox.showinfo(APP_TITLE, f"Connect your program to 127.0.0.1:{s.local_port} "
-                                           f"(forwarded to {s.target()}).")
-            return
+            if s.remote_port == 22 and messagebox.askyesno(
+                    APP_TITLE, f"'{s.name}' forwards port 22, which is an SSH login, but is set up as a plain "
+                               "port forward, so there is nothing to open.\n\nChange it to an SSH login service "
+                               "and open a terminal on it now? (No reconnect needed.)"):
+                s.type = "ssh"
+                self.save()
+                self.refresh_tree()
+            else:
+                messagebox.showwarning(
+                    APP_TITLE, f"'{s.name}' is a port forward without an open action, so there is nothing to "
+                               f"open.\n\nWhile connected, programs can connect to 127.0.0.1:{s.local_port} "
+                               f"(it leads to {self.target_text(s)}).\n\nTo get a web page or remote desktop "
+                               "instead, click Edit... and choose 'When opened'.")
+                return
         self.status.set(f"Opening {s.name}...")
 
         def run():
@@ -459,7 +506,11 @@ class App:
             elif what == "browser":
                 if not cfg.browser:
                     raise FileNotFoundError("No browser selected.")
-                made = shortcuts.create(f"PSI {browsers.NAMES[cfg.browser]}", ["browser", cfg.browser], "browser")
+                label, args = f"PSI {browsers.NAMES[cfg.browser]}", ["browser", cfg.browser]
+                if cfg.browser_proxy:
+                    label += f" ({cfg.service(cfg.browser_proxy).name})"
+                    args += ["--service", cfg.browser_proxy]
+                made = shortcuts.create(label, args, "browser")
             else:
                 s = self.selected_service()
                 if not s:
