@@ -47,8 +47,9 @@ is missing: *Settings > System > Optional features > Add a feature > OpenSSH Cli
 3. Click **Connect**, type your **PSI password**, then approve the **MFA** request on your phone
    (or type the code if asked). If you have access to a cluster (e.g. Ra), log in there too when asked.
    The indicator turns green when connected.
-4. Click **Open browser** for a separate browser window that goes through PSI,
-   or select a service and click **Open selected service** (remote desktop, Jupyter, SSH login).
+4. Click **Open browser** for a separate browser window that goes through PSI (*through* chooses which
+   web proxy, if you have several), or select a service and click **Open selected service**
+   (remote desktop, Jupyter, SSH login; on a web proxy it opens the browser through that proxy).
 
 "Open browser", "Open selected service" and the desktop icons connect automatically if needed.
 To change the selection: **Disconnect**, change, **Connect** (a new MFA login is needed).
@@ -96,8 +97,13 @@ Add an *SSH login* service for each host and set **Runs through** to the host be
 | SARES gateway | `saresb-gw` | gateway (directly from hopx) |
 | SARES console 03 | `saresb-vcons-03` | SARES gateway |
 
-Tick the console and connect: Hoppla logs in to hopx, then to `saresb-gw` through it, then to
-`saresb-vcons-03` through that (each host asks for its password, or uses your SSH key). Proxies and port
+Use type **ssh** for both (new services start as ssh). Tick the console and connect: Hoppla logs in to
+hopx, then to `saresb-gw` through it, then to `saresb-vcons-03` through that (each host asks for its
+password, or uses your SSH key). Select the console and click **Open selected service** for a terminal there.
+
+For a **browser through the whole chain**, add a *socks* service that runs through the last host (e.g.
+"Web via console 03", runs through `saresb-vcons-03`), tick it, reconnect, and choose it under
+**Open browser → through** (or select it and click *Open selected service*). Proxies and port
 forwards can run through any host in such a chain, too. *Graphics (X11)* lets graphical programs of an
 SSH login open on your screen (needs an X server: built in on Linux, XQuartz on macOS, VcXsrv on Windows).
 

@@ -91,6 +91,7 @@ class Config:
     gateway: str = DEFAULT_GATEWAY
     gateway_port: int = 22
     browser: str = ""
+    browser_proxy: str = ""  # id of the SOCKS service "Open browser" uses; "" = automatic
     login_mode: str = "auto"  # auto | app (password dialogs) | terminal
     pac_only_psi: bool = False
     system_proxy: bool = False  # macOS: PSI addresses of all apps through the tunnel (sysproxy.py)
