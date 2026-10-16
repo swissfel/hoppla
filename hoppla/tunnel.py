@@ -76,7 +76,9 @@ def _forwarding(ssh: str) -> list[str]:
 
 
 def gateway_command(cfg: Config, services: list[Service], ssh: str = "ssh") -> list[str]:
-    cmd = _forwarding(ssh) + ["-o", "PreferredAuthentications=keyboard-interactive,password"]
+    # One attempt per connect: the gateway blocks the IP after repeated failures.
+    cmd = _forwarding(ssh) + ["-o", "PreferredAuthentications=keyboard-interactive,password",
+                              "-o", "NumberOfPasswordPrompts=1"]
     for s in services:
         if s.type == "socks":
             cmd += ["-D", f"{LOCALHOST}:{s.local_port}"]
@@ -225,11 +227,16 @@ def stop() -> bool:
 
 
 # --------------------------------------------------------- diagnostics ------
+LOGIN_FAILED = "Login failed: wrong user name, password or OTP code."
+LOCKOUT_WARNING = ("\n\nCareful: after several failed logins the gateway blocks your internet address "
+                   "for a while. Check your user name, and wait for a fresh OTP code before trying again.")
+
+
 ERRORS = [
     ("REMOTE HOST IDENTIFICATION HAS CHANGED", "The server's identity changed. This can be a security problem; "
                                                "contact PSI IT before connecting again."),
     ("Host key verification failed", "The server's identity could not be verified."),
-    ("Permission denied", "Login failed: wrong user name, password or OTP code."),
+    ("Permission denied", LOGIN_FAILED),
     ("Too many authentication failures", "Login failed: too many attempts."),
     ("Could not resolve hostname", "Cannot find the gateway. Are you connected to the internet?"),
     ("timed out", "No answer from the gateway. Check your internet connection."),
@@ -382,7 +389,10 @@ class Session:
                         msg = "Login cancelled."
                     else:
                         msg = explain(text) if (text.strip() or not was_up) else "The connection ended."
-                    _write_result(msg, failed=not was_up)
+                    failures = last_result().get("login_failures", 0) + 1 if msg == LOGIN_FAILED else 0
+                    if failures >= 2:
+                        msg += LOCKOUT_WARNING
+                    _write_result(msg, failed=not was_up, login_failures=failures)
                     return 0 if was_up else 1
                 self.out("\nConnection closed.")
                 try:
@@ -437,10 +447,8 @@ def start(cfg: Config, extra_ids=()) -> str:
     args = []
     for sid in extra_ids:
         args += ["--with", sid]
-    try:
-        result_file().unlink()
-    except OSError:
-        pass
+    # Reset the outcome but remember failed logins (see LOCKOUT_WARNING).
+    _write_result("", login_failures=last_result().get("login_failures", 0))
     if mode == "app":
         detached_popen(self_command("session", "--background", *args, gui=True))
     else:

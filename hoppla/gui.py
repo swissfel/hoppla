@@ -323,7 +323,7 @@ class App:
         up = running and all(tunnel.port_open(p, timeout=0.1) for p in self.ports_of(running))
         if running:
             self.pending = 0.0
-        elif self.pending and (tunnel.last_result() or time.time() - self.pending > 30):
+        elif self.pending and (tunnel.last_result().get("message") or time.time() - self.pending > 30):
             self.pending = 0.0
             self.session_ended()
         if up:
@@ -343,7 +343,7 @@ class App:
 
     def session_ended(self):
         res = tunnel.last_result()
-        msg = res.get("message", "Disconnected.")
+        msg = res.get("message") or "Disconnected."
         self.status.set(msg)
         if res.get("failed") and msg != "Login cancelled.":
             messagebox.showerror(APP_TITLE, msg)
