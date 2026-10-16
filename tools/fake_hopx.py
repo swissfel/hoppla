@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import http.server
+import os
 import socket
 import socketserver
 import threading
@@ -63,8 +64,11 @@ def bridge(chan, host: str, port: int) -> None:
     except OSError:
         chan.close()
         return
+    sock.settimeout(None)  # the timeout was only for connecting; idle tunnels must stay open
 
-    def pump(src, dst):
+    done = []
+
+    def pump(src, dst, end_write):
         try:
             while True:
                 data = src.recv(32768)
@@ -73,14 +77,19 @@ def bridge(chan, host: str, port: int) -> None:
                 dst.sendall(data)
         except OSError:
             pass
-        finally:
-            for x in (src, dst):
+        try:
+            end_write()  # half-close: pass EOF on, the other direction may still be busy (like sshd)
+        except OSError:
+            pass
+        done.append(1)
+        if len(done) == 2:
+            for x in (chan, sock):
                 try:
                     x.close()
                 except OSError:
                     pass
-    threading.Thread(target=pump, args=(chan, sock), daemon=True).start()
-    threading.Thread(target=pump, args=(sock, chan), daemon=True).start()
+    threading.Thread(target=pump, args=(chan, sock, lambda: sock.shutdown(socket.SHUT_WR)), daemon=True).start()
+    threading.Thread(target=pump, args=(sock, chan, chan.shutdown_write), daemon=True).start()
 
 
 class HopServer(paramiko.ServerInterface):
@@ -226,6 +235,17 @@ class Page(http.server.BaseHTTPRequestHandler):
         pass
 
 
+def host_key(name: str) -> paramiko.PKey:
+    """A key kept on disk, like a real server's: clients notice when it changes."""
+    path = os.path.join(os.path.expanduser("~/.cache/fake_hopx"), name + ".key")
+    if os.path.exists(path):
+        return paramiko.RSAKey(filename=path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    key = paramiko.RSAKey.generate(2048)
+    key.write_private_key_file(path)
+    return key
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--hop-port", type=int, default=2022)
@@ -237,13 +257,13 @@ def main():
     def log(msg):
         print(time.strftime("%H:%M:%S"), msg, flush=True)
 
+    socketserver.ThreadingTCPServer.allow_reuse_address = True  # quick restarts
     web = socketserver.ThreadingTCPServer(("127.0.0.1", a.web_port), Page)
     threading.Thread(target=web.serve_forever, daemon=True).start()
     limits = Limits(min_interval=a.min_interval)
     targets = {("ra.psi.ch", 22): ("127.0.0.1", a.ra_port), ("ra", 22): ("127.0.0.1", a.ra_port)}
-    serve(a.hop_port, lambda ip: HopServer(ip, limits, targets, log), paramiko.Ed25519Key.generate()
-          if hasattr(paramiko.Ed25519Key, "generate") else paramiko.RSAKey.generate(2048), limits, log)
-    serve(a.ra_port, lambda ip: RaServer(a.web_port, log), paramiko.RSAKey.generate(2048), None, log)
+    serve(a.hop_port, lambda ip: HopServer(ip, limits, targets, log), host_key("hop"), limits, log)
+    serve(a.ra_port, lambda ip: RaServer(a.web_port, log), host_key("ra"), None, log)
     log(f"fake hopx on 127.0.0.1:{a.hop_port} (user {USER}, password {PASSWORD}, code {CODE}); "
         f"ra.psi.ch -> :{a.ra_port}; web pages -> :{a.web_port}")
     while True:
