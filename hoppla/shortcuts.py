@@ -111,7 +111,7 @@ def desktop_entry(label: str, argv: list[str], kind: str) -> str:
         "[Desktop Entry]",
         "Type=Application",
         f"Name={label}",
-        f"Comment={APP_TITLE}: {label}",
+        f"Comment={'Tunnels into PSI through hopx' if label == APP_TITLE else APP_TITLE + ': ' + label}",
         "Exec=" + " ".join(_desktop_quote(a) for a in argv),
         f"Icon={LINUX_ICONS.get(kind, 'network-vpn')}",
         "Terminal=false",
