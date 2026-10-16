@@ -42,13 +42,14 @@ class Service:
     local_port: int
     remote_host: str = ""
     remote_port: int = 0
-    via: str = "gateway"  # socks/forward: "gateway" (on hopx itself) or the id of an ssh service
+    via: str = "gateway"  # "gateway" (directly from hopx) or the id of an ssh service to hop through
     open: str = "none"  # forward only: none | url | rdp
     url: str = ""  # forward/url: template, "{port}" is replaced by local_port
     enabled: bool = False
+    x11: bool = False  # ssh only: graphical programs (X11 forwarding) in the login
 
     def target(self) -> str:
-        via = "" if self.type == "ssh" or self.via == "gateway" else f" via {self.via}"
+        via = "" if self.via == "gateway" else f" via {self.via}"
         if self.type == "socks":
             return "any PSI address" + via
         port = self.remote_port or (22 if self.type == "ssh" else 0)
@@ -106,12 +107,27 @@ class Config:
         raise KeyError(f"unknown service '{sid}'")
 
     def selected(self, extra_ids=()) -> list[Service]:
-        """Enabled services plus `extra_ids`, including ssh services needed by inner proxies."""
+        """Enabled services plus `extra_ids`, plus every ssh host they hop through."""
         ids = {s.id for s in self.services if s.enabled} | set(extra_ids)
-        for s in self.services:
-            if s.id in ids and s.type != "ssh" and s.via != "gateway":
+        by_id = {s.id: s for s in self.services}
+        todo = list(ids)
+        while todo:
+            s = by_id.get(todo.pop())
+            if s and s.via != "gateway" and s.via not in ids:
                 ids.add(s.via)
+                todo.append(s.via)
         return [s for s in self.services if s.id in ids]
+
+    def chain(self, s: Service) -> list[Service]:
+        """The ssh hosts between hopx and `s`, nearest to hopx first; raises ValueError on a loop."""
+        hops, seen = [], {s.id}
+        while s.via != "gateway":
+            s = self.service(s.via)
+            if s.id in seen:
+                raise ValueError("loop")
+            seen.add(s.id)
+            hops.insert(0, s)
+        return hops
 
     def new_id(self, name: str) -> str:
         base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "service"
@@ -140,12 +156,16 @@ class Config:
                 out.append(f"{s.name}: remote host is missing.")
             if s.type == "forward" and not s.remote_port:
                 out.append(f"{s.name}: remote port is missing.")
-            if s.type != "ssh" and s.via != "gateway":
+            if s.via != "gateway":
                 try:
                     if self.service(s.via).type != "ssh":
                         out.append(f"{s.name}: '{s.via}' is not an SSH service.")
+                    else:
+                        self.chain(s)
                 except KeyError:
                     out.append(f"{s.name}: unknown SSH service '{s.via}'.")
+                except ValueError:
+                    out.append(f"{s.name}: its 'runs through' hosts form a loop.")
         return out
 
     # ---- persistence --------------------------------------------------
