@@ -33,7 +33,7 @@ class TestConfig(Base):
         self.cfg.service("socks-ra").enabled = True
         plan = tunnel.make_plan(self.cfg)
         self.assertIn("ssh-ra", [s.id for s in plan.gateway])
-        self.assertEqual([s.id for s in plan.inner], ["socks-ra"])
+        self.assertEqual([s.id for s in plan.inner["ssh-ra"]], ["socks-ra"])
 
     def test_problems(self):
         self.cfg.user = ""
@@ -51,17 +51,36 @@ class TestConfig(Base):
 
 class TestCommands(Base):
     def test_gateway_command_single_connection(self):
-        services = self.cfg.selected(["ssh-ra", "rdp-winterm3"])
+        services = self.cfg.selected(["ssh-ra", "rdp-winterm3", "socks"])
         cmd = tunnel.gateway_command(self.cfg, services, "ssh")
         self.assertEqual(cmd[-1], "tester@hopx.psi.ch")
         self.assertIn("127.0.0.1:1080", cmd)
         self.assertIn("127.0.0.1:2201:ra.psi.ch:22", cmd)
         self.assertIn("127.0.0.1:9022:winterm3.psi.ch:3389", cmd)
 
-    def test_inner_socks_uses_local_forward(self):
-        cmd = tunnel.inner_socks_command(self.cfg, self.cfg.service("socks-ra"), "ssh")
+    def test_inner_connection_carries_proxy_and_forward(self):
+        self.cfg.service("jupyter-ra").enabled = True
+        plan = tunnel.make_plan(self.cfg)
+        self.assertEqual([s.id for s in plan.gateway], ["ssh-ra"])
+        self.assertEqual([s.id for s in plan.inner["ssh-ra"]], ["socks-ra", "jupyter-ra"])
+        cmd = tunnel.inner_command(self.cfg, self.cfg.service("ssh-ra"), plan.inner["ssh-ra"], "ssh")
         self.assertEqual(cmd[-3:], ["-p", "2201", "tester@127.0.0.1"])
         self.assertIn("HostKeyAlias=ra.psi.ch", cmd)
+        self.assertIn("127.0.0.1:8989", cmd)
+        self.assertIn("127.0.0.1:9789:jupytera.psi.ch:443", cmd)
+
+    def test_gateway_is_interactive_setup_connection(self):
+        cmd = tunnel.gateway_command(self.cfg, tunnel.make_plan(self.cfg).gateway, "ssh")
+        self.assertIn("-tt", cmd)
+        self.assertNotIn("-N", cmd)
+        self.assertIn("PreferredAuthentications=keyboard-interactive", cmd)
+        self.assertIn("NumberOfPasswordPrompts=1", cmd)
+
+    def test_cooldown(self):
+        tunnel._write_result("", attempt=__import__("time").time())
+        self.assertGreater(tunnel.cooldown_left(), 20)
+        tunnel._write_result("", attempt=0)
+        self.assertEqual(tunnel.cooldown_left(), 0)
 
     def test_ssh_config_block_replaced_not_duplicated(self):
         path = actions.ssh_config_path()
@@ -85,7 +104,7 @@ class TestIndependence(Base):
         self.assertTrue(any(a.startswith("UserKnownHostsFile=") for a in cmd))
 
     def test_explain(self):
-        self.assertIn("password or OTP", tunnel.explain("x@hopx: Permission denied (keyboard-interactive)."))
+        self.assertIn("password or MFA", tunnel.explain("x@hopx: Permission denied (keyboard-interactive)."))
         self.assertIn("internet", tunnel.explain("ssh: Could not resolve hostname hopx.psi.ch"))
 
     def test_askpass_prompts(self):

@@ -12,7 +12,7 @@ from pathlib import Path
 APP_NAME = "hoppla"
 APP_TITLE = "Hoppla"
 DEFAULT_GATEWAY = "hopx.psi.ch"
-CONFIG_VERSION = 1
+CONFIG_VERSION = 2
 
 SERVICE_TYPES = {
     "socks": "SOCKS proxy (for browsers)",
@@ -42,16 +42,17 @@ class Service:
     local_port: int
     remote_host: str = ""
     remote_port: int = 0
-    via: str = "gateway"  # socks only: "gateway" or the id of an ssh service
+    via: str = "gateway"  # socks/forward: "gateway" (on hopx itself) or the id of an ssh service
     open: str = "none"  # forward only: none | url | rdp
     url: str = ""  # forward/url: template, "{port}" is replaced by local_port
     enabled: bool = False
 
     def target(self) -> str:
+        via = "" if self.type == "ssh" or self.via == "gateway" else f" via {self.via}"
         if self.type == "socks":
-            return "dynamic (all hosts)" if self.via == "gateway" else f"dynamic via {self.via}"
+            return "any PSI address" + via
         port = self.remote_port or (22 if self.type == "ssh" else 0)
-        return f"{self.remote_host}:{port}"
+        return f"{self.remote_host}:{port}{via}"
 
     @property
     def ssh_port(self) -> int:
@@ -67,14 +68,18 @@ class Service:
 
 
 def presets() -> list[Service]:
-    """Services offered out of the box. Adjust these for your facility."""
+    """Services offered out of the box. Adjust these for your facility.
+
+    External users may only reach clusters such as Ra by SSH through hopx, so
+    proxies and forwards run through Ra. "gateway" services need PSI staff rights.
+    """
     return [
-        Service("socks", "Web proxy via hopx", "socks", 1080, enabled=True),
         Service("ssh-ra", "SSH to Ra cluster", "ssh", 2201, "ra.psi.ch", 22),
-        Service("socks-ra", "Web proxy via Ra", "socks", 8989, via="ssh-ra"),
-        Service("jupyter-ra", "Jupyter on Ra", "forward", 9789, "jupytera.psi.ch", 443,
+        Service("socks-ra", "Web proxy via Ra", "socks", 8989, via="ssh-ra", enabled=True),
+        Service("jupyter-ra", "Jupyter on Ra", "forward", 9789, "jupytera.psi.ch", 443, via="ssh-ra",
                 open="url", url="https://localhost:{port}/"),
-        Service("rdp-winterm3", "Windows terminal server (RDP)", "forward", 9022,
+        Service("socks", "Web proxy on hopx (PSI staff)", "socks", 1080),
+        Service("rdp-winterm3", "Windows terminal server, RDP (PSI staff)", "forward", 9022,
                 "winterm3.psi.ch", 3389, open="rdp"),
     ]
 
@@ -104,7 +109,7 @@ class Config:
         """Enabled services plus `extra_ids`, including ssh services needed by inner proxies."""
         ids = {s.id for s in self.services if s.enabled} | set(extra_ids)
         for s in self.services:
-            if s.id in ids and s.type == "socks" and s.via != "gateway":
+            if s.id in ids and s.type != "ssh" and s.via != "gateway":
                 ids.add(s.via)
         return [s for s in self.services if s.id in ids]
 
@@ -135,7 +140,7 @@ class Config:
                 out.append(f"{s.name}: remote host is missing.")
             if s.type == "forward" and not s.remote_port:
                 out.append(f"{s.name}: remote port is missing.")
-            if s.type == "socks" and s.via != "gateway":
+            if s.type != "ssh" and s.via != "gateway":
                 try:
                     if self.service(s.via).type != "ssh":
                         out.append(f"{s.name}: '{s.via}' is not an SSH service.")
@@ -151,8 +156,9 @@ class Config:
     def from_dict(cls, d: dict) -> "Config":
         known = {f.name for f in fields(cls)} - {"services"}
         cfg = cls(**{k: v for k, v in d.items() if k in known})
-        if "services" in d:
+        if "services" in d and d.get("version", 1) >= 2:
             cfg.services = [Service.from_dict(s) for s in d["services"]]
+        cfg.version = CONFIG_VERSION  # version 1 lists assumed forwards directly on hopx: use new presets
         return cfg
 
     def save(self, path: Path | None = None) -> None:

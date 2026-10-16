@@ -55,8 +55,8 @@ class ServiceDialog(tk.Toplevel):
         self.w_port = add("Remote port", ttk.Entry(f, textvariable=self.v["remote_port"], width=8),
                           "22 for SSH, 3389 for RDP")
         vias = ["gateway"] + [x.id for x in cfg.services if x.type == "ssh"]
-        self.w_via = add("Proxy runs on", ttk.Combobox(f, textvariable=self.v["via"], values=vias,
-                                                       state="readonly"), "SOCKS only")
+        self.w_via = add("Runs through", ttk.Combobox(f, textvariable=self.v["via"], values=vias,
+                                                      state="readonly"), "gateway = hopx itself (PSI staff)")
         self.w_open = add("When opened", ttk.Combobox(f, textvariable=self.v["open"], values=list(OPEN_ACTIONS),
                                                       state="readonly"), "none / url / rdp")
         self.w_url = add("URL", ttk.Entry(f, textvariable=self.v["url"]), "{port} = local port")
@@ -74,7 +74,7 @@ class ServiceDialog(tk.Toplevel):
 
     def update_state(self):
         t, o = self.v["type"].get(), self.v["open"].get()
-        for w, on in ((self.w_host, t != "socks"), (self.w_port, t != "socks"), (self.w_via, t == "socks"),
+        for w, on in ((self.w_host, t != "socks"), (self.w_port, t != "socks"), (self.w_via, t != "ssh"),
                       (self.w_open, t == "forward"), (self.w_url, t == "forward" and o == "url")):
             w.configure(state=("readonly" if isinstance(w, ttk.Combobox) else "normal") if on else "disabled")
 
@@ -91,7 +91,7 @@ class ServiceDialog(tk.Toplevel):
             return
         sid = self.orig.id if self.orig else self.cfg.new_id(v["name"])
         s = Service(sid, v["name"], v["type"], lp, v["remote_host"], rp,
-                    via=v["via"] if v["type"] == "socks" else "gateway",
+                    via=v["via"] if v["type"] != "ssh" else "gateway",
                     open=v["open"] if v["type"] == "forward" else "none", url=v["url"],
                     enabled=self.orig.enabled if self.orig else True)
         others = [x for x in self.cfg.services if x.id != sid]
@@ -316,11 +316,11 @@ class App:
             if not self.tree.exists(s.id):
                 continue
             if s.id in running:
-                state = "up" if tunnel.port_open(s.local_port, timeout=0.1) else "login..."
+                state = "up" if tunnel.listening(s.local_port) else "login..."
             else:
                 state = ""
             self.tree.set(s.id, "state", state)
-        up = running and all(tunnel.port_open(p, timeout=0.1) for p in self.ports_of(running))
+        up = bool(running) and all(tunnel.listening(p) for p in self.ports_of(running))
         if running:
             self.pending = 0.0
         elif self.pending and (tunnel.last_result().get("message") or time.time() - self.pending > 30):
@@ -352,8 +352,8 @@ class App:
         mode = {v: k for k, v in LOGIN_MODES.items()}.get(self.login.get(), "auto")
         if mode == "auto":
             mode = tunnel.login_mode(Config(login_mode="auto"))
-        self.hint.set("You will be asked for your PSI password, then the OTP code." if mode == "app" else
-                      "A terminal opens: type your PSI password, then the OTP. Keep it open.")
+        self.hint.set("Enter your PSI password, then approve the MFA request (or type the code)." if mode == "app"
+                      else "A terminal opens for the login (password, then MFA). Keep it open.")
 
     def start(self):
         cfg = self.save()

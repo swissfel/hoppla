@@ -16,7 +16,7 @@ LOCAL = "@127.0.0.1"
 
 def classify(prompt: str) -> str:
     p = prompt.lower()
-    if "(yes/no" in p:
+    if "(yes/no" in p or "(y/n)" in p or "[y/n]" in p:
         return "confirm"
     if "passphrase" in p or "password" in p:
         return "secret"
@@ -31,7 +31,7 @@ def friendly(prompt: str, label: str) -> str:
     if kind == "secret" and "passphrase" not in text.lower():
         return f"{text}\n\n(your PSI password)"
     if kind == "code":
-        return f"{text}\n\n(the one-time code from your authenticator / token)"
+        return f"{text}\n\n(the MFA code from Microsoft Authenticator)"
     return text
 
 
