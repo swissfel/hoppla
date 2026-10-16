@@ -71,6 +71,21 @@ Other programs can use the SOCKS5 proxy `127.0.0.1:8989` (or the port shown in t
 External users reach PSI through a cluster they have access to (by default Ra): the web proxy and
 Jupyter run *through* Ra. Entries marked *(PSI staff)* run directly on hopx and only work for PSI staff.
 
+### Hosts behind other hosts (double hops)
+
+Some machines are only reachable from another internal host, e.g. hopx → `saresb-gw` → `saresb-vcons-03`.
+Add an *SSH login* service for each host and set **Runs through** to the host before it:
+
+| Service | Remote host | Runs through |
+|---|---|---|
+| SARES gateway | `saresb-gw` | gateway (directly from hopx) |
+| SARES console 03 | `saresb-vcons-03` | SARES gateway |
+
+Tick the console and connect: Hoppla logs in to hopx, then to `saresb-gw` through it, then to
+`saresb-vcons-03` through that (each host asks for its password, or uses your SSH key). Proxies and port
+forwards can run through any host in such a chain, too. *Graphics (X11)* lets graphical programs of an
+SSH login open on your screen (needs an X server: built in on Linux, XQuartz on macOS, VcXsrv on Windows).
+
 ### Login in a terminal instead
 
 *Ask password/OTP in: Terminal window* shows the login in a terminal instead of dialogs. Use it if the

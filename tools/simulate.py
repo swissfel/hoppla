@@ -6,6 +6,8 @@
 Uses a throw-away settings folder; your real settings and the real hopx are not touched.
 The password/MFA/yes-no dialogs are answered by a small script instead of a person;
 set HOPPLA_SIM_PASSWORD to a wrong value to see the failed-login handling.
+HOPPLA_SIM_DOUBLE=1 tests a double hop instead: hopx -> saresb-gw -> saresb-vcons-03
+(a SOCKS proxy on the last host, and a real ssh login there through both hops).
 """
 
 from __future__ import annotations
@@ -46,7 +48,17 @@ def main() -> int:
     from hoppla import config, tunnel
 
     cfg = config.Config(user="tester", gateway="127.0.0.1", gateway_port=2022, login_mode="app")
-    cfg.service("jupyter-ra").enabled = True
+    double = os.environ.get("HOPPLA_SIM_DOUBLE") == "1"
+    if double:
+        for s in cfg.services:
+            s.enabled = False
+        cfg.services += [
+            config.Service("ssh-gw", "SARES gateway", "ssh", 2301, "saresb-gw", 22),
+            config.Service("ssh-vcons", "SARES console 03", "ssh", 2302, "saresb-vcons-03", 22, via="ssh-gw"),
+            config.Service("socks-vcons", "Proxy on console 03", "socks", 8990, via="ssh-vcons", enabled=True),
+        ]
+    else:
+        cfg.service("jupyter-ra").enabled = True
     for s in cfg.services:  # own ports, so a real Hoppla connection can stay open meanwhile
         s.local_port += 10000
     cfg.save()
@@ -63,9 +75,10 @@ def main() -> int:
 
     ok = True
     try:
-        socks, jup = cfg.service("socks-ra"), cfg.service("jupyter-ra")
+        socks = cfg.service("socks-vcons" if double else "socks-ra")
+        last = cfg.service("ssh-vcons") if double else cfg.service("jupyter-ra")
         for _ in range(60):
-            if tunnel.read_state() and tunnel.listening(socks.local_port) and tunnel.listening(jup.local_port):
+            if tunnel.read_state() and tunnel.listening(socks.local_port) and tunnel.listening(last.local_port):
                 break
             if runner.poll() is not None:
                 break
@@ -80,11 +93,18 @@ def main() -> int:
         out = subprocess.run(["curl", "-s", "--max-time", "10", "--socks5-hostname",
                               f"127.0.0.1:{socks.local_port}", "http://intranet.psi.ch/test"],
                              capture_output=True, text=True)
-        print("via SOCKS proxy on Ra:", out.stdout.strip() or out.stderr.strip())
+        print(f"via SOCKS proxy on {'console 03' if double else 'Ra'}:", out.stdout.strip() or out.stderr.strip())
         ok &= "inside PSI" in out.stdout
-        page = urllib.request.urlopen(f"http://127.0.0.1:{jup.local_port}/lab", timeout=10).read().decode()
-        print("via Jupyter forward:  ", page.strip())
-        ok &= "inside PSI" in page
+        if double:  # what "Open selected service" runs, here with a command instead of a shell
+            env = dict(os.environ, SSH_ASKPASS=str(answers), SSH_ASKPASS_REQUIRE="force")
+            cmd = tunnel.login_command(cfg, last, "ssh") + ["-o", "BatchMode=no", "echo", "hi"]
+            run = subprocess.run(cmd, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30)
+            print("ssh login on console 03 through both hops:", run.stdout.strip() or run.stderr.strip())
+            ok &= "fake PSI host" in run.stdout
+        else:
+            page = urllib.request.urlopen(f"http://127.0.0.1:{last.local_port}/lab", timeout=10).read().decode()
+            print("via Jupyter forward:  ", page.strip())
+            ok &= "inside PSI" in page
     finally:
         tunnel.stop()
         time.sleep(1)

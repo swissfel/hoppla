@@ -77,6 +77,32 @@ class TestCommands(Base):
         self.assertIn("127.0.0.1:8989", cmd)
         self.assertIn("127.0.0.1:9789:jupytera.psi.ch:443", cmd)
 
+    def test_double_hop(self):
+        self.cfg.services += [
+            config.Service("ssh-gw", "gw", "ssh", 2301, "saresb-gw", 22),
+            config.Service("ssh-vcons", "vcons", "ssh", 2302, "saresb-vcons-03", 22, via="ssh-gw", x11=True),
+            config.Service("socks-vcons", "proxy", "socks", 8990, via="ssh-vcons"),
+        ]
+        for s in self.cfg.services:
+            s.enabled = s.id == "socks-vcons"
+        plan = tunnel.make_plan(self.cfg)
+        self.assertEqual([s.id for s in plan.gateway], ["ssh-gw"])  # hopx only forwards to the first hop
+        self.assertEqual([s.id for s in plan.inner["ssh-gw"]], ["ssh-vcons"])
+        self.assertEqual([s.id for s in plan.inner["ssh-vcons"]], ["socks-vcons"])
+        cmd = tunnel.inner_command(self.cfg, self.cfg.service("ssh-gw"), plan.inner["ssh-gw"], "ssh")
+        self.assertIn("127.0.0.1:2302:saresb-vcons-03:22", cmd)  # resolved on saresb-gw
+        self.assertEqual(cmd[-3:], ["-p", "2301", "tester@127.0.0.1"])
+        login = tunnel.login_command(self.cfg, self.cfg.service("ssh-vcons"), "ssh")
+        self.assertIn("-X", login)
+        self.assertEqual(login[-3:], ["-p", "2302", "tester@127.0.0.1"])
+        self.assertEqual([h.id for h in self.cfg.chain(self.cfg.service("socks-vcons"))], ["ssh-gw", "ssh-vcons"])
+        self.assertEqual(self.cfg.problems(), [])
+
+    def test_hop_loop_is_reported(self):
+        self.cfg.services += [config.Service("a", "A", "ssh", 2401, "a", 22, via="b", enabled=True),
+                              config.Service("b", "B", "ssh", 2402, "b", 22, via="a")]
+        self.assertTrue(any("loop" in p for p in self.cfg.problems()))
+
     def test_gateway_is_interactive_setup_connection(self):
         cmd = tunnel.gateway_command(self.cfg, tunnel.make_plan(self.cfg).gateway, "ssh")
         self.assertIn("-tt", cmd)

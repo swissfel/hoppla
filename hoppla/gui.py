@@ -54,12 +54,15 @@ class ServiceDialog(tk.Toplevel):
         self.w_host = add("Remote host", ttk.Entry(f, textvariable=self.v["remote_host"]), "e.g. ra.psi.ch")
         self.w_port = add("Remote port", ttk.Entry(f, textvariable=self.v["remote_port"], width=8),
                           "22 for SSH, 3389 for RDP")
-        vias = ["gateway"] + [x.id for x in cfg.services if x.type == "ssh"]
+        vias = ["gateway"] + [x.id for x in cfg.services if x.type == "ssh" and (not service or x.id != service.id)]
         self.w_via = add("Runs through", ttk.Combobox(f, textvariable=self.v["via"], values=vias,
-                                                      state="readonly"), "gateway = hopx itself (PSI staff)")
+                                                      state="readonly"), "gateway = directly from hopx")
         self.w_open = add("When opened", ttk.Combobox(f, textvariable=self.v["open"], values=list(OPEN_ACTIONS),
                                                       state="readonly"), "none / url / rdp")
         self.w_url = add("URL", ttk.Entry(f, textvariable=self.v["url"]), "{port} = local port")
+        self.x11 = tk.BooleanVar(value=s.x11)
+        self.w_x11 = add("Graphics", ttk.Checkbutton(f, text="allow graphical programs (X11)", variable=self.x11),
+                         "SSH only; needs an X server")
 
         b = ttk.Frame(f)
         b.grid(row=row, column=0, columnspan=3, sticky="e", pady=(10, 0))
@@ -74,7 +77,7 @@ class ServiceDialog(tk.Toplevel):
 
     def update_state(self):
         t, o = self.v["type"].get(), self.v["open"].get()
-        for w, on in ((self.w_host, t != "socks"), (self.w_port, t != "socks"), (self.w_via, t != "ssh"),
+        for w, on in ((self.w_host, t != "socks"), (self.w_port, t != "socks"), (self.w_x11, t == "ssh"),
                       (self.w_open, t == "forward"), (self.w_url, t == "forward" and o == "url")):
             w.configure(state=("readonly" if isinstance(w, ttk.Combobox) else "normal") if on else "disabled")
 
@@ -91,7 +94,7 @@ class ServiceDialog(tk.Toplevel):
             return
         sid = self.orig.id if self.orig else self.cfg.new_id(v["name"])
         s = Service(sid, v["name"], v["type"], lp, v["remote_host"], rp,
-                    via=v["via"] if v["type"] != "ssh" else "gateway",
+                    via=v["via"] or "gateway", x11=self.x11.get() if v["type"] == "ssh" else False,
                     open=v["open"] if v["type"] == "forward" else "none", url=v["url"],
                     enabled=self.orig.enabled if self.orig else True)
         others = [x for x in self.cfg.services if x.id != sid]
@@ -272,7 +275,7 @@ class App:
 
     def target_text(self, s: Service) -> str:
         text = s.target()
-        if s.type != "ssh" and s.via != "gateway":
+        if s.via != "gateway":
             try:
                 text = text.replace(f"via {s.via}", f"via {self.cfg.service(s.via).remote_host}")
             except KeyError:

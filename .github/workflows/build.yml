@@ -44,6 +44,8 @@ jobs:
           sleep 6
           HOPPLA_SIM_PASSWORD=wrong python tools/simulate.py | tee wrong.txt || true
           grep -q "Login failed" wrong.txt
+          sleep 6
+          HOPPLA_SIM_DOUBLE=1 python tools/simulate.py
       - if: always()
         run: cat fake.log
 

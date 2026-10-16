@@ -11,8 +11,10 @@ What it imitates (from https://www.psi.ch/computing/ssh-hop-ng and real logs):
   * only SSH to known clusters (ra.psi.ch:22) is allowed
   * one setup connection per user; a second one is refused
   * repeated failed logins block the client address; frequent logins are refused
-Behind it, "ra.psi.ch" accepts password logins and lets forwards reach a small
-web server that stands in for every internal web page (e.g. jupytera.psi.ch).
+Behind it, "ra.psi.ch" and "saresb-gw" accept password logins (and run commands).
+From there, every host:22 is another such SSH host (for double hops, e.g.
+saresb-gw -> saresb-vcons-03), and every other port reaches a small web server
+that stands in for all internal web pages (e.g. jupytera.psi.ch).
 """
 
 from __future__ import annotations
@@ -167,8 +169,8 @@ class HopServer(paramiko.ServerInterface):
 
 
 class RaServer(paramiko.ServerInterface):
-    def __init__(self, web_port, log):
-        self.web_port, self.log = web_port, log
+    def __init__(self, web_port, log, ssh_port):
+        self.web_port, self.log, self.ssh_port = web_port, log, ssh_port
         self.pending: dict[int, tuple[str, int]] = {}
 
     def get_allowed_auths(self, username):
@@ -184,8 +186,21 @@ class RaServer(paramiko.ServerInterface):
 
     def check_channel_direct_tcpip_request(self, chanid, origin, destination):
         self.log(f"ra: forward to {destination[0]}:{destination[1]}")
-        self.pending[chanid] = ("127.0.0.1", self.web_port)  # every internal page is our web server
+        if destination[1] == 22:  # another internal SSH host: played by this same fake server
+            self.pending[chanid] = ("127.0.0.1", self.ssh_port)
+        else:  # every internal page is our web server
+            self.pending[chanid] = ("127.0.0.1", self.web_port)
         return paramiko.OPEN_SUCCEEDED
+
+    def check_channel_exec_request(self, channel, command):
+        self.log(f"ra: run {command.decode(errors='replace')!r}")
+
+        def reply():
+            channel.send(b"Hello from a fake PSI host\n")
+            channel.send_exit_status(0)
+            channel.close()
+        threading.Timer(0.1, reply).start()
+        return True
 
 
 def serve(port, make_server, host_key, limits: Limits | None, log):
@@ -261,9 +276,9 @@ def main():
     web = socketserver.ThreadingTCPServer(("127.0.0.1", a.web_port), Page)
     threading.Thread(target=web.serve_forever, daemon=True).start()
     limits = Limits(min_interval=a.min_interval)
-    targets = {("ra.psi.ch", 22): ("127.0.0.1", a.ra_port), ("ra", 22): ("127.0.0.1", a.ra_port)}
+    targets = {(h, 22): ("127.0.0.1", a.ra_port) for h in ("ra.psi.ch", "ra", "saresb-gw", "saresb-gw.psi.ch")}
     serve(a.hop_port, lambda ip: HopServer(ip, limits, targets, log), host_key("hop"), limits, log)
-    serve(a.ra_port, lambda ip: RaServer(a.web_port, log), host_key("ra"), None, log)
+    serve(a.ra_port, lambda ip: RaServer(a.web_port, log, a.ra_port), host_key("ra"), None, log)
     log(f"fake hopx on 127.0.0.1:{a.hop_port} (user {USER}, password {PASSWORD}, code {CODE}); "
         f"ra.psi.ch -> :{a.ra_port}; web pages -> :{a.web_port}")
     while True:

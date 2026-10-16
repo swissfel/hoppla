@@ -54,7 +54,7 @@ class Plan:
 def make_plan(cfg: Config, extra_ids=()) -> Plan:
     plan = Plan()
     for s in cfg.selected(extra_ids):
-        if s.type != "ssh" and s.via != "gateway":
+        if s.via != "gateway":  # carried by the connection to the host it runs through
             plan.inner.setdefault(s.via, []).append(s)
         else:
             plan.gateway.append(s)
@@ -110,7 +110,7 @@ def inner_command(cfg: Config, host: Service, services: list[Service], ssh: str 
 
 
 def login_command(cfg: Config, host: Service, ssh: str = "ssh") -> list[str]:
-    return [*base_options(ssh), *via_localhost(cfg, host)]
+    return [*base_options(ssh), *(["-X"] if host.x11 else []), *via_localhost(cfg, host)]
 
 
 # --------------------------------------------------------- login mode -------
@@ -431,7 +431,7 @@ class Session:
         return "".join(p.tail)
 
     # -- connection
-    def _start_inner(self, host: Service, services: list[Service]) -> None:
+    def _start_inner(self, host: Service, services: list[Service]) -> bool:
         cfg = self.cfg
         names = ", ".join(s.name for s in services)
         if not self.background:
@@ -441,12 +441,13 @@ class Session:
             t0 = time.time()
             p = self._popen(inner_command(cfg, host, services, self.ssh), host.remote_host)
             if _wait_ports(p, [s.local_port for s in services]):
-                return
+                return True
             quick = time.time() - t0 < 8
             if not quick or "Permission denied" in self._tail(p):
                 break
             time.sleep(3)
         self.out(f"!! Could not connect to {host.remote_host}; {names} not available.")
+        return False
 
     def connect_once(self) -> bool:
         """Log in, start inner connections, block until the gateway session ends."""
@@ -463,10 +464,16 @@ class Session:
         if not _wait_ports(gw, [s.local_port for s in self.plan.gateway], settle=2):
             return False
         _write_result("Connected.", connected=True, login_failures=0)
-        for host_id, services in self.plan.inner.items():
-            if gw.poll() is not None:
-                break
-            self._start_inner(cfg.service(host_id), services)
+        # hop by hop: a host's connection needs the forward made by the connection before it
+        ready = {s.id for s in self.plan.gateway}
+        todo = dict(self.plan.inner)
+        while todo and gw.poll() is None:
+            host_id = next((h for h in todo if h in ready), None)
+            if host_id is None:
+                break  # the hosts left depend on one that failed
+            services = todo.pop(host_id)
+            if self._start_inner(cfg.service(host_id), services):
+                ready |= {s.id for s in services}
         if not self.background:
             _summary(cfg, self.plan, self.out)
         gw.wait()
