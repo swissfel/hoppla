@@ -5,7 +5,8 @@
 
 Uses a throw-away settings folder; your real settings and the real hopx are not touched.
 The password/MFA/yes-no dialogs are answered by a small script instead of a person;
-set HOPPLA_SIM_PASSWORD to a wrong value to see the failed-login handling.
+set HOPPLA_SIM_PASSWORD to a wrong value to see the failed-login handling (3 tries),
+HOPPLA_SIM_TYPO=1 to mistype only the first password.
 HOPPLA_SIM_SYSPROXY=1 also switches on the macOS system proxy (with a fake networksetup).
 HOPPLA_SIM_DOUBLE=1 tests a double hop instead: hopx -> beamline-gw -> beamline-console
 (a SOCKS proxy on the last host, and a real ssh login there through both hops).
@@ -27,12 +28,17 @@ sys.path.insert(0, str(ROOT))
 ANSWERS = '''#!{python}
 import os, sys
 prompt = " ".join(sys.argv[1:]).lower()
+home = os.environ["HOPPLA_HOME"]
 with open(os.environ["HOPPLA_HOME"] + "/prompts.txt", "a") as f:
     f.write(" ".join(sys.argv[1:]).replace("\\n", " | ") + "\\n")
 if "y/n" in prompt or "yes/no" in prompt:
     print("yes")
 elif "password" in prompt:
-    print(os.environ.get("HOPPLA_SIM_PASSWORD", "secret"))
+    n = home + "/password-count"
+    count = int(open(n).read()) + 1 if os.path.exists(n) else 1
+    open(n, "w").write(str(count))
+    typo = os.environ.get("HOPPLA_SIM_TYPO") == "1" and count == 1  # first password mistyped
+    print("secre" if typo else os.environ.get("HOPPLA_SIM_PASSWORD", "secret"))
 else:
     print("123456")
 '''

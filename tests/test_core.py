@@ -108,7 +108,7 @@ class TestCommands(Base):
         self.assertIn("-tt", cmd)
         self.assertNotIn("-N", cmd)
         self.assertIn("PreferredAuthentications=keyboard-interactive", cmd)
-        self.assertIn("NumberOfPasswordPrompts=1", cmd)
+        self.assertIn("NumberOfPasswordPrompts=3", cmd)  # a few tries for typos
 
     def test_cooldown(self):
         tunnel._write_result("", attempt=__import__("time").time())

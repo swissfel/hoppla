@@ -75,8 +75,8 @@ def base_options(ssh: str) -> list[str]:
     return [ssh, "-F", "none", *KEEPALIVE,
             "-o", "StrictHostKeyChecking=accept-new",
             "-o", f"UserKnownHostsFile={_quoted(known_hosts_file())}",
-            # One attempt per connect: gateways block addresses after repeated failures.
-            "-o", "NumberOfPasswordPrompts=1"]
+            # A few tries for typos, then stop: gateways block addresses after repeated failures.
+            "-o", "NumberOfPasswordPrompts=3"]
 
 
 def forward_args(services: list[Service]) -> list[str]:
@@ -151,11 +151,20 @@ def askpass_program() -> str:
     return str(wrapper)
 
 
-def askpass_env(label: str) -> dict:
+def askpass_env(label: str, account: str = "") -> dict:
+    """`label` is shown in the dialogs; `account` (user@host) names the remembered password."""
     env = dict(os.environ)
     env.update({"SSH_ASKPASS": askpass_program(), "SSH_ASKPASS_REQUIRE": "force",
-                ASKPASS_ENV: "1", "HOPPLA_LOGIN_LABEL": label})
+                ASKPASS_ENV: "1", "HOPPLA_LOGIN_LABEL": label, "HOPPLA_LOGIN_ACCOUNT": account})
     return env
+
+
+def forget_unconfirmed(account: str) -> None:
+    """A password remembered during a login that then failed must not stay in the keyring."""
+    from . import askpass, keyring
+    entry = askpass._load_state().get(account, {})
+    if entry.get("stored"):
+        keyring.remove(account)
 
 
 # ---------------------------------------------------------------- ports -----
@@ -293,7 +302,7 @@ def _write_result(message: str, **extra) -> None:
 
 # ------------------------------------------------------------ rate limit ----
 MIN_INTERVAL = 30  # seconds between gateway logins
-FAILURE_PAUSE = 120  # extra seconds per failed login in a row, capped below
+FAILURE_PAUSE = 60  # extra seconds per failed connect in a row (each allows 3 tries), capped below
 MAX_PAUSE = 600
 
 
@@ -381,14 +390,14 @@ class Session:
         self.pac = None  # sysproxy.PacServer while the system proxy is on
 
     # -- processes
-    def _popen(self, cmd: list[str], label: str, interactive: bool = False) -> subprocess.Popen:
+    def _popen(self, cmd: list[str], label: str, interactive: bool = False, account: str = "") -> subprocess.Popen:
         if not self.background:
             p = subprocess.Popen(cmd)  # terminal: the user sees and answers everything
             p.tail = deque(maxlen=0)
         else:
             kw = {"creationflags": subprocess.CREATE_NO_WINDOW} if WINDOWS else {"start_new_session": True}
             p = subprocess.Popen(cmd, stdin=subprocess.PIPE if interactive else subprocess.DEVNULL,
-                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=askpass_env(label), **kw)
+                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=askpass_env(label, account), **kw)
             p.tail = deque(maxlen=200)
             threading.Thread(target=self._pump, args=(p, label, interactive), daemon=True).start()
         self.procs.append(p)
@@ -440,7 +449,8 @@ class Session:
             self.out(f"Log in to {host.remote_host} if asked (password or SSH key).")
         for attempt in range(3):  # the gateway may need a moment before it lets us through
             t0 = time.time()
-            p = self._popen(inner_command(cfg, host, services, self.ssh), host.remote_host)
+            p = self._popen(inner_command(cfg, host, services, self.ssh), host.remote_host,
+                            account=f"{cfg.user}@{host.remote_host}")
             if _wait_ports(p, [s.local_port for s in services]):
                 return True
             quick = time.time() - t0 < 8
@@ -448,6 +458,7 @@ class Session:
                 break
             time.sleep(3)
         self.out(f"!! Could not connect to {host.remote_host}; {names} not available.")
+        forget_unconfirmed(f"{cfg.user}@{host.remote_host}")
         return False
 
     def connect_once(self) -> bool:
@@ -460,9 +471,17 @@ class Session:
             self.out(" or type the code when asked. Keep this window open while you work.")
             self.out("=" * 70)
         _record_attempt()
+        from .askpass import state_file as login_state
+        try:
+            login_state().unlink()  # count tries per connect
+        except OSError:
+            pass
+        gw_account = f"{cfg.user}@{cfg.gateway}"
         gw = self._popen(gateway_command(cfg, self.plan.gateway, self.ssh), f"PSI gateway ({cfg.gateway})",
+                         account=gw_account,
                          interactive=True)
         if not _wait_ports(gw, [s.local_port for s in self.plan.gateway], settle=2):
+            forget_unconfirmed(gw_account)
             return False
         _write_result("Connected.", connected=True, login_failures=0)
         # hop by hop: a host's connection needs the forward made by the connection before it

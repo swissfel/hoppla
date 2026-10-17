@@ -51,6 +51,10 @@ is missing: *Settings > System > Optional features > Add a feature > OpenSSH Cli
    web proxy, if you have several), or select a service and click **Open selected service**
    (remote desktop, Jupyter, SSH login; on a web proxy it opens the browser through that proxy).
 
+Typos are fine: each login allows 3 tries. In the password dialog, **Remember password** keeps it in your
+system keyring (GNOME Keyring/KWallet on Linux, Keychain on macOS, Credential Manager on Windows); next time
+only the MFA step is needed. *Forget saved passwords* removes them. MFA codes are never stored.
+
 "Open browser", "Open selected service" and the desktop icons connect automatically if needed.
 To change the selection: **Disconnect**, change, **Connect** (a new MFA login is needed).
 If the laptop sleeps or the network changes, the connection drops; just connect again.

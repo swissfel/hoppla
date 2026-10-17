@@ -217,7 +217,8 @@ class App:
                           ("Icon: connect", lambda: self.shortcut("tunnel")),
                           ("Icon: browser", lambda: self.shortcut("browser")),
                           ("Icon: selected service", lambda: self.shortcut("service")),
-                          ("SSH aliases (advanced)", self.write_ssh_config)):
+                          ("SSH aliases (advanced)", self.write_ssh_config),
+                          ("Forget saved passwords", self.forget_passwords)):
             ttk.Button(sc, text=text, command=cmd).pack(side="left", padx=3)
 
         ttk.Label(main, textvariable=self.status, foreground="gray").pack(fill="x", pady=(6, 0))
@@ -525,6 +526,20 @@ class App:
             self.error(e)
             return
         messagebox.showinfo(APP_TITLE, "Created:\n" + "\n".join(str(p) for p in made))
+
+    def forget_passwords(self):
+        from . import keyring
+        if not keyring.available():
+            messagebox.showinfo(APP_TITLE, "No system keyring found, so no passwords are saved.")
+            return
+        cfg = self.save()
+        hosts = [cfg.gateway] + [s.remote_host for s in cfg.services if s.type == "ssh"]
+        if not messagebox.askyesno(APP_TITLE, "Remove the passwords Hoppla saved in the system keyring for:\n\n"
+                                              + "\n".join(f"{cfg.user}@{h}" for h in hosts) + "\n\n?"):
+            return
+        for h in hosts:
+            keyring.remove(f"{cfg.user}@{h}")
+        self.status.set("Saved passwords removed.")
 
     def write_ssh_config(self):
         cfg = self.save()

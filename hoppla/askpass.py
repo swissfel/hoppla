@@ -35,8 +35,11 @@ def friendly(prompt: str, label: str) -> str:
     return text
 
 
-def ask(prompt: str, label: str = "", root=None) -> str | None:
-    """Show the dialog; returns the answer or None when cancelled."""
+def ask(prompt: str, label: str = "", root=None, remember: dict | None = None) -> str | None:
+    """Show the dialog; returns the answer or None when cancelled.
+
+    `remember`: for password prompts, offer "Remember password"; the choice is stored in remember["value"].
+    """
     import tkinter as tk
     from tkinter import ttk
 
@@ -72,6 +75,11 @@ def ask(prompt: str, label: str = "", root=None) -> str | None:
             shown = tk.BooleanVar(value=False)
             ttk.Checkbutton(frame, text="Show", variable=shown,
                             command=lambda: entry.configure(show="" if shown.get() else "•")).pack(anchor="w")
+            if remember is not None:
+                keep = tk.BooleanVar(value=True)
+                remember["value"] = True
+                ttk.Checkbutton(frame, text="Remember password (in the system keyring)", variable=keep,
+                                command=lambda: remember.update(value=keep.get())).pack(anchor="w")
         ttk.Button(buttons, text="Cancel", command=lambda: done(None)).pack(side="right")
         ttk.Button(buttons, text="OK", command=lambda: done(var.get())).pack(side="right", padx=6)
         root.bind("<Return>", lambda e: done(var.get()))
@@ -90,10 +98,61 @@ def ask(prompt: str, label: str = "", root=None) -> str | None:
     return result["value"]
 
 
+MAX_TRIES = 3  # matches NumberOfPasswordPrompts in tunnel.base_options
+
+
+def state_file():
+    from .config import config_dir
+    return config_dir() / "login-state.json"
+
+
+def _load_state() -> dict:
+    import json
+    try:
+        return json.loads(state_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_state(state: dict) -> None:
+    import json
+    try:
+        state_file().write_text(json.dumps(state), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def main(argv: list[str]) -> int:
     prompt = " ".join(argv) or "Password:"
+    label = os.environ.get("HOPPLA_LOGIN_LABEL", "")
+    account = os.environ.get("HOPPLA_LOGIN_ACCOUNT", "")
+    kind = classify(prompt)
+    # per host and connect: how often we were asked, whether a saved password was tried
+    state = _load_state()
+    entry = state.setdefault(account or label, {"asks": 0, "codes": 0, "saved_used": False, "stored": False})
+    remember = None
+    if kind == "secret" and "passphrase" not in prompt.lower():
+        from . import keyring
+        entry["asks"] += 1
+        if entry["asks"] == 1 and account and keyring.available():
+            saved = keyring.get(account)
+            if saved:
+                entry["saved_used"] = True
+                _save_state(state)
+                return _reply(saved)
+        if entry["saved_used"] and entry["asks"] == 2 and not entry["stored"]:
+            keyring.remove(account)  # the saved password no longer works (changed?)
+        if entry["asks"] > 1:
+            prompt = f"Login failed, please try again (attempt {entry['asks']} of {MAX_TRIES}).\n\n{prompt}"
+        if account and keyring.available():
+            remember = {"value": False}
+    elif kind == "code":
+        entry["codes"] += 1
+        if entry["codes"] > 1:
+            prompt = f"Login failed, please try again.\n\n{prompt}"
+    _save_state(state)
     try:
-        answer = ask(prompt, os.environ.get("HOPPLA_LOGIN_LABEL", ""))
+        answer = ask(prompt, label, remember=remember)
     except Exception as e:  # noqa: BLE001 - no display etc.
         print(f"hoppla askpass failed: {e}", file=sys.stderr)
         return 1
@@ -104,6 +163,15 @@ def main(argv: list[str]) -> int:
         except OSError:
             pass  # the session runner sees the flag and stops ssh
         return 1
+    if remember and remember.get("value"):
+        from . import keyring
+        if keyring.put(account, answer):
+            entry["stored"] = True  # removed again by the session if this login fails
+            _save_state(state)
+    return _reply(answer)
+
+
+def _reply(answer: str) -> int:
     data = answer.encode("utf-8") + b"\n"  # not the console code page (umlauts in passwords)
     if sys.stdout is not None and hasattr(sys.stdout, "buffer"):
         sys.stdout.buffer.write(data)
