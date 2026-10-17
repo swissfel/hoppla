@@ -148,6 +148,14 @@ class TestIndependence(Base):
         self.assertIn("@ra.psi.ch", askpass.friendly("u@127.0.0.1's password:", "ra.psi.ch"))
 
 
+class TestProcessName(Base):
+    @unittest.skipUnless(Path("/proc/self/exe").exists(), "Linux only")
+    def test_updated_program_is_still_recognized(self):
+        from hoppla import platforms
+        with mock.patch("os.readlink", return_value="/home/u/.local/bin/hoppla (deleted)"):
+            self.assertEqual(platforms.process_name(os.getpid()), "hoppla")
+
+
 class TestBrowsers(Base):
     def test_chrome_all_traffic(self):
         cmd = browsers.command(self.cfg, "chrome", "/opt/chrome", 1080, pac_only_psi=False)

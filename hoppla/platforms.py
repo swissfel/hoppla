@@ -109,7 +109,8 @@ def process_name(pid: int) -> str:
             return Path(buf.value).name.lower() if ok else ""
         proc = Path(f"/proc/{pid}/exe")
         if proc.exists():
-            return Path(os.path.realpath(proc)).name.lower()
+            # an updated program shows as "hoppla (deleted)" while the old copy still runs
+            return Path(os.readlink(proc)).name.lower().removesuffix(" (deleted)")
         out = subprocess.run(["ps", "-p", str(pid), "-o", "comm="], capture_output=True, text=True, timeout=5)
         return Path(out.stdout.strip()).name.lower()
     except (OSError, subprocess.SubprocessError, AttributeError):
