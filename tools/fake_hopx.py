@@ -36,8 +36,10 @@ BANNER = ("#" * 60 + "\r\n##  FAKE hopx: authenticate with MFA  ##\r\n" + "#" * 
 class Limits:
     """Failed-login blocking and login frequency limit, per client address."""
 
-    def __init__(self, max_failures=3, min_interval=5.0):
+    def __init__(self, max_failures=3, min_interval=5.0, block_seconds=60.0):
         self.failures: dict[str, int] = {}
+        self.blocked_since: dict[str, float] = {}
+        self.block_seconds = block_seconds
         self.last_login: dict[str, float] = {}
         self.max_failures, self.min_interval = max_failures, min_interval
         self.lock = threading.Lock()
@@ -45,7 +47,11 @@ class Limits:
     def refuse(self, ip: str) -> str | None:
         with self.lock:
             if self.failures.get(ip, 0) >= self.max_failures:
-                return "address blocked after failed logins"
+                since = self.blocked_since.get(ip, 0)
+                if time.time() - since < self.block_seconds:
+                    return "address blocked after failed logins"
+                self.failures[ip] = 0  # the block expires, like on the real gateway
+                self.blocked_since.pop(ip, None)
             if time.time() - self.last_login.get(ip, 0) < self.min_interval:
                 return "too many logins"
             self.last_login[ip] = time.time()
@@ -54,6 +60,8 @@ class Limits:
     def failed(self, ip: str) -> None:
         with self.lock:
             self.failures[ip] = self.failures.get(ip, 0) + 1
+            if self.failures[ip] == self.max_failures:
+                self.blocked_since[ip] = time.time()  # blocked for block_seconds from now
 
     def ok(self, ip: str) -> None:
         with self.lock:
@@ -110,7 +118,8 @@ class HopServer(paramiko.ServerInterface):
 
     def check_auth_interactive(self, username, submethods):
         self.user, self.stage = username, 1
-        return paramiko.InteractiveQuery("", "", ("Password: ", False))
+        # like the real hopx: the password prompt is not marked as secret (echo on)
+        return paramiko.InteractiveQuery("", "", ("Password: ", True))
 
     def check_auth_interactive_response(self, responses):
         answer = responses[0] if responses else ""
