@@ -91,25 +91,13 @@ are connected. Hoppla first explains what this does; in short:
 
 On Windows and Linux, use the Hoppla browser (Edge, Chrome, Firefox, ...) instead.
 
-### Hosts behind other hosts (double hops)
+### Hosts behind other hosts (advanced)
 
-Some machines are only reachable from another internal host, e.g. hopx → `beamline-gw` → `beamline-console`.
-Add an *SSH login* service for each host and set **Runs through** to the host before it:
-
-| Service | Remote host | Runs through |
-|---|---|---|
-| Beamline gateway | `beamline-gw` | gateway (directly from hopx) |
-| Beamline console | `beamline-console` | Beamline gateway |
-
-Use type **ssh** for both (new services start as ssh). Tick the console and connect: Hoppla logs in to
-hopx, then to `beamline-gw` through it, then to `beamline-console` through that (each host asks for its
-password, or uses your SSH key). Select the console and click **Open selected service** for a terminal there.
-
-For a **browser through the whole chain**, add a *socks* service that runs through the last host (e.g.
-"Web via console", runs through `beamline-console`), tick it, reconnect, and choose it under
-**Open browser → through** (or select it and click *Open selected service*). Proxies and port
-forwards can run through any host in such a chain, too. *Graphics (X11)* lets graphical programs of an
-SSH login open on your screen (needs an X server: built in on Linux, XQuartz on macOS, VcXsrv on Windows).
+If a machine is only reachable from another internal host, add an *SSH login* service for each host and set
+**Runs through** to the host before it. Hoppla then logs in host by host (each asks for its password, or
+uses your SSH key). Proxies and port forwards can also run through the last host of such a chain; choose
+that proxy under **Open browser → through**. *Graphics (X11)* lets graphical programs of an SSH login open
+on your screen (needs an X server: built in on Linux, XQuartz on macOS, VcXsrv on Windows).
 
 ### Login in a terminal instead
 

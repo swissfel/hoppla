@@ -195,6 +195,8 @@ class RaServer(paramiko.ServerInterface):
 
     def check_channel_direct_tcpip_request(self, chanid, origin, destination):
         self.log(f"ra: forward to {destination[0]}:{destination[1]}")
+        if "offline" in destination[0]:  # stands for a host that is down or does not exist
+            return paramiko.OPEN_FAILED_CONNECT_FAILED
         if destination[1] == 22:  # another internal SSH host: played by this same fake server
             self.pending[chanid] = ("127.0.0.1", self.ssh_port)
         else:  # every internal page is our web server
