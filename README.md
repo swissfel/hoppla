@@ -162,6 +162,14 @@ hoppla/
 
 **Adapt the default services** in `config.presets()`. Users can also add/edit services in the window.
 
+### psi-tunnel (Linux command line)
+
+`tools/psi-tunnel` is a separate bash helper for developers, not part of the app: it routes PSI subnets
+through a beamline console with `sshuttle` (so unmodified programs reach internal hosts such as the
+SwissFEL dispatcher and stream hosts) and mounts `/sf/...` data directories from Ra with `sshfs`, all
+over one multiplexed ssh connection (one MFA login). Needs `sshuttle` and `sshfs` (and sudo for
+sshuttle). `tools/psi-tunnel help` lists the commands and the environment variables to configure it.
+
 ### Test on Linux
 
 ```
