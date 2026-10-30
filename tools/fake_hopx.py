@@ -14,7 +14,8 @@ What it imitates (from https://www.psi.ch/computing/ssh-hop-ng and real logs):
 Behind it, "ra.psi.ch" and "beamline-gw" accept password logins (and run commands).
 From there, every host:22 is another such SSH host (for double hops, e.g.
 beamline-gw -> beamline-console), and every other port reaches a small web server
-that stands in for all internal web pages (e.g. jupytera.psi.ch).
+that stands in for all internal web pages (e.g. jupytera.psi.ch) -- except
+localhost:PORT, which reaches the real local PORT (a service on that host itself).
 """
 
 from __future__ import annotations
@@ -197,7 +198,9 @@ class RaServer(paramiko.ServerInterface):
         self.log(f"ra: forward to {destination[0]}:{destination[1]}")
         if "offline" in destination[0]:  # stands for a host that is down or does not exist
             return paramiko.OPEN_FAILED_CONNECT_FAILED
-        if destination[1] == 22:  # another internal SSH host: played by this same fake server
+        if destination[0] in ("localhost", "127.0.0.1"):  # this host itself, like sshd: the real local port
+            self.pending[chanid] = ("127.0.0.1", destination[1])
+        elif destination[1] == 22:  # another internal SSH host: played by this same fake server
             self.pending[chanid] = ("127.0.0.1", self.ssh_port)
         else:  # every internal page is our web server
             self.pending[chanid] = ("127.0.0.1", self.web_port)
