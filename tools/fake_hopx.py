@@ -206,8 +206,15 @@ class RaServer(paramiko.ServerInterface):
             self.pending[chanid] = ("127.0.0.1", self.web_port)
         return paramiko.OPEN_SUCCEEDED
 
+    def check_channel_pty_request(self, *args):
+        return True
+
     def check_channel_exec_request(self, channel, command):
-        self.log(f"ra: run {command.decode(errors='replace')!r}")
+        text = command.decode(errors="replace")
+        self.log(f"ra: run {text!r}")
+        if text.startswith("fake-serve "):  # a service on this host for as long as the command runs
+            threading.Thread(target=self._serve_while_open, args=(channel, int(text.split()[1])), daemon=True).start()
+            return True
 
         def reply():
             channel.send(b"Hello from a fake PSI host\n")
@@ -215,6 +222,25 @@ class RaServer(paramiko.ServerInterface):
             channel.close()
         threading.Timer(0.1, reply).start()
         return True
+
+    def _serve_while_open(self, channel, port):
+        """`fake-serve PORT`: listen on 127.0.0.1:PORT (each client gets one line) until the channel
+        closes -- like a server started over ssh with a terminal, which ends when the connection does."""
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(("127.0.0.1", port))
+        listener.listen(5)
+        listener.settimeout(0.2)
+        channel.send(f"fake service listening on {port}\r\n".encode())
+        while not (channel.closed or channel.eof_received):
+            try:
+                client, _ = listener.accept()
+            except socket.timeout:
+                continue
+            client.sendall(b"fake service\n")
+            client.close()
+        listener.close()
+        self.log(f"ra: fake-serve {port} stopped (its channel closed)")
 
 
 def serve(port, make_server, host_key, limits: Limits | None, log):
