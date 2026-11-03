@@ -232,6 +232,7 @@ class RaServer(paramiko.ServerInterface):
         listener.listen(5)
         listener.settimeout(0.2)
         channel.send(f"fake service listening on {port}\r\n".encode())
+        channel.send(f"open http://localhost:{port}/?token=fake\r\n".encode())  # as web services print
         while not (channel.closed or channel.eof_received):
             try:
                 client, _ = listener.accept()
