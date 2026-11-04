@@ -558,6 +558,18 @@ class App:
         self.status.set("SSH aliases: " + ", ".join(actions.ssh_aliases(cfg)) + " (while connected)")
 
 
+def fit_rows_to_font(style: ttk.Style) -> None:
+    """Treeview rows have a fixed pixel height; with Windows display scaling (125%, 150%, ...)
+    the font grows but the rows do not, and each line hides half of the one above. Size rows
+    from the real font height instead (with room for the check-box symbols)."""
+    import tkinter.font as tkfont
+    try:
+        line = max(tkfont.nametofont(name).metrics("linespace") for name in ("TkDefaultFont", "TkTextFont"))
+    except tk.TclError:
+        return
+    style.configure("Treeview", rowheight=int(line * 1.4) + 2)
+
+
 def run_gui() -> int:
     if WINDOWS:
         try:
@@ -572,6 +584,7 @@ def run_gui() -> int:
         if theme in style.theme_names():
             style.theme_use(theme)
             break
+    fit_rows_to_font(style)
     App(root)
     root.mainloop()
     return 0
