@@ -174,6 +174,7 @@ class TestBrowsers(Base):
 
     def test_pac(self):
         pac = browsers.pac_script(self.cfg, 1080)
+        self.assertIn('host == "localhost"', pac)  # this computer's own ports (e.g. a forwarded Jupyter) stay direct
         self.assertIn('dnsDomainIs(host, ".psi.ch")', pac)
         self.assertIn("SOCKS5 127.0.0.1:1080", pac)
 

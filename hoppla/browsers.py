@@ -95,6 +95,7 @@ def pac_script(cfg: Config, port: int) -> str:
     cond = " ||\n      ".join(conds)
     return ("function FindProxyForURL(url, host) {\n"
             "  host = host.toLowerCase();\n"
+            '  if (host == "localhost" || shExpMatch(host, "127.*")) return "DIRECT";  // this computer\n'
             f"  if ({cond})\n"
             f'    return "{proxy}";\n'
             '  return "DIRECT";\n'
