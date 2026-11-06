@@ -8,6 +8,8 @@ The password/MFA/yes-no dialogs are answered by a small script instead of a pers
 set HOPPLA_SIM_PASSWORD to a wrong value to see the failed-login handling (3 tries),
 HOPPLA_SIM_TYPO=1 to mistype only the first password.
 HOPPLA_SIM_SYSPROXY=1 also switches on the macOS system proxy (with a fake networksetup).
+HOPPLA_SIM_COMMAND=1 runs a command on the last host of a double hop ("fake-serve PORT" on a port nobody
+configured): its link with the token must be picked, its port reachable here, and it must stop on disconnect.
 HOPPLA_SIM_DOUBLE=1 tests a double hop instead: hopx -> beamline-gw -> beamline-console
 (a SOCKS proxy on the last host, and a real ssh login there through both hops).
 """
@@ -55,7 +57,12 @@ def main() -> int:
     from hoppla import config, tunnel
 
     cfg = config.Config(user="tester", gateway="127.0.0.1", gateway_port=2022, login_mode="app")
-    double = os.environ.get("HOPPLA_SIM_DOUBLE") == "1"
+    command_test = os.environ.get("HOPPLA_SIM_COMMAND") == "1"
+    double = os.environ.get("HOPPLA_SIM_DOUBLE") == "1" or command_test
+    import socket as _socket
+    with _socket.socket() as _s:
+        _s.bind(("127.0.0.1", 0))
+        serve_port = _s.getsockname()[1]  # the port "the service" picks: not configured anywhere
     if double:
         for s in cfg.services:
             s.enabled = False
@@ -64,6 +71,9 @@ def main() -> int:
             config.Service("ssh-vcons", "Beamline console", "ssh", 2302, "beamline-console", 22, via="ssh-gw"),
             config.Service("socks-vcons", "Proxy on console", "socks", 8990, via="ssh-vcons", enabled=True),
         ]
+        if command_test:
+            cfg.service("ssh-vcons").command = f"fake-serve {serve_port}"
+            cfg.open_links = False  # no browser in tests
     else:
         cfg.service("jupyter-ra").enabled = True
     sysproxy_test = os.environ.get("HOPPLA_SIM_SYSPROXY") == "1"
@@ -122,6 +132,20 @@ def main() -> int:
             ok &= f"SOCKS5 127.0.0.1:{socks.local_port}" in pac
         print(f"via SOCKS proxy on {'console' if double else 'Ra'}:", out.stdout.strip() or out.stderr.strip())
         ok &= "inside PSI" in out.stdout
+        if command_test:
+            link = None
+            for _ in range(40):  # the plain address comes first, the one with the token half a second later
+                link = tunnel.read_state().get("link")
+                if link and "token=" in link:
+                    break
+                time.sleep(0.25)
+            print("link picked:", link)
+            ok &= bool(link) and "token=fake" in link
+            port = int(link.split("://localhost:")[1].split("/")[0]) if link else 0
+            with _socket.create_connection(("127.0.0.1", port), timeout=10) as c:
+                answer = c.makefile().readline().strip()
+            print(f"through local port {port}:", answer)
+            ok &= answer == "fake service"
         if double:  # what "Open selected service" runs, here with a command instead of a shell
             env = dict(os.environ, SSH_ASKPASS=str(answers), SSH_ASKPASS_REQUIRE="force")
             cmd = tunnel.login_command(cfg, last, "ssh") + ["-o", "BatchMode=no", "echo", "hi"]
@@ -136,6 +160,14 @@ def main() -> int:
         tunnel.stop()
         time.sleep(1)
         print("after stop:", tunnel.last_result().get("message"), "| still running:", bool(tunnel.read_state()))
+        if command_test:
+            time.sleep(1)
+            try:
+                _socket.create_connection(("127.0.0.1", serve_port), timeout=2).close()
+                print("the command still runs on the host after disconnecting!")
+                ok = False
+            except OSError:
+                print("the command stopped with the connection")
         if sysproxy_test:
             wifi = _json.loads(netstate.read_text())["Wi-Fi"]
             print("system proxy after disconnect:", "off (restored)" if not wifi["enabled"] else f"STILL ON {wifi}")

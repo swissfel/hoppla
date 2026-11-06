@@ -48,6 +48,8 @@ jobs:
           sleep 6
           HOPPLA_SIM_SYSPROXY=1 python tools/simulate.py
           sleep 6
+          HOPPLA_SIM_COMMAND=1 python tools/simulate.py
+          sleep 6
           # last: three wrong passwords make the simulated hopx block the address for a while
           HOPPLA_SIM_PASSWORD=wrong python tools/simulate.py | tee wrong.txt || true
           grep -q "Login failed" wrong.txt

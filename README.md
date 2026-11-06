@@ -99,6 +99,16 @@ uses your SSH key). Proxies and port forwards can also run through the last host
 that proxy under **Open browser → through**. *Graphics (X11)* lets graphical programs of an SSH login open
 on your screen (needs an X server: built in on Linux, XQuartz on macOS, VcXsrv on Windows).
 
+### Starting a web app on a host (e.g. your own Jupyter)
+
+An *SSH login* service can run a **command when connected**, e.g. `jupyter lab --no-browser` on Ra. Hoppla
+starts it after logging in, shows its output in the log (or the terminal window), and stops it when you
+disconnect. When the command prints a link to its web page (`http://localhost:8888/lab?token=...`), Hoppla
+makes that port reachable on your computer, also when the program picked another port by itself (e.g. 8889
+because 8888 was busy), and opens the link in your browser (*Open links from commands by themselves*; an
+*Open link* button appears too). Servers often print their address first without and then with the token:
+Hoppla takes the one with the token.
+
 ### Login in a terminal instead
 
 *Ask password/OTP in: Terminal window* shows the login in a terminal instead of dialogs. Use it if the

@@ -47,6 +47,7 @@ class Service:
     url: str = ""  # forward/url: template, "{port}" is replaced by local_port
     enabled: bool = False
     x11: bool = False  # ssh only: graphical programs (X11 forwarding) in the login
+    command: str = ""  # ssh only: run on this host while connected (e.g. a web app), stopped on disconnect
 
     def target(self) -> str:
         via = "" if self.via == "gateway" else f" via {self.via}"
@@ -95,6 +96,7 @@ class Config:
     login_mode: str = "auto"  # auto | app (password dialogs) | terminal
     pac_only_psi: bool = False
     system_proxy: bool = False  # macOS: PSI addresses of all apps through the tunnel (sysproxy.py)
+    open_links: bool = True  # open the link a command prints (e.g. Jupyter's, with its token) by itself
     psi_domains: list[str] = field(default_factory=lambda: ["psi.ch"])
     psi_networks: list[str] = field(default_factory=lambda: ["129.129."])
     start_url: str = "https://www.psi.ch/"

@@ -63,6 +63,9 @@ class ServiceDialog(tk.Toplevel):
         self.x11 = tk.BooleanVar(value=s.x11)
         self.w_x11 = add("Graphics", ttk.Checkbutton(f, text="allow graphical programs (X11)", variable=self.x11),
                          "SSH only; needs an X server")
+        self.v["command"] = tk.StringVar(value=s.command)
+        self.w_cmd = add("Command when connected", ttk.Entry(f, textvariable=self.v["command"], width=34),
+                         "SSH only; e.g. jupyter lab --no-browser")
 
         b = ttk.Frame(f)
         b.grid(row=row, column=0, columnspan=3, sticky="e", pady=(10, 0))
@@ -77,7 +80,7 @@ class ServiceDialog(tk.Toplevel):
 
     def update_state(self):
         t, o = self.v["type"].get(), self.v["open"].get()
-        for w, on in ((self.w_host, t != "socks"), (self.w_port, t != "socks"), (self.w_x11, t == "ssh"),
+        for w, on in ((self.w_host, t != "socks"), (self.w_port, t != "socks"), (self.w_x11, t == "ssh"), (self.w_cmd, t == "ssh"),
                       (self.w_open, t == "forward"), (self.w_url, t == "forward" and o == "url")):
             w.configure(state=("readonly" if isinstance(w, ttk.Combobox) else "normal") if on else "disabled")
 
@@ -104,6 +107,7 @@ class ServiceDialog(tk.Toplevel):
         sid = self.orig.id if self.orig else self.cfg.new_id(v["name"])
         s = Service(sid, v["name"], v["type"], lp, v["remote_host"], rp,
                     via=v["via"] or "gateway", x11=self.x11.get() if v["type"] == "ssh" else False,
+                    command=v["command"] if v["type"] == "ssh" else "",
                     open=v["open"] if v["type"] == "forward" else "none", url=v["url"],
                     enabled=self.orig.enabled if self.orig else True)
         others = [x for x in self.cfg.services if x.id != sid]
@@ -132,6 +136,7 @@ class App:
         self.pac = tk.BooleanVar(value=self.cfg.pac_only_psi)
         self.proxy_choice = tk.StringVar()
         self.sysproxy = tk.BooleanVar(value=self.cfg.system_proxy)
+        self.open_links = tk.BooleanVar(value=self.cfg.open_links)
         if not tunnel.read_state():
             from .sysproxy import cleanup_leftovers
             cleanup_leftovers()  # a crashed session may have left the Mac's proxy setting behind
@@ -187,6 +192,8 @@ class App:
         self.state_label.pack(side="left")
         ttk.Button(tn, text="Connect", command=self.start).pack(side="left", padx=4)
         ttk.Button(tn, text="Disconnect", command=self.stop).pack(side="left", padx=4)
+        # shown while a command (e.g. Jupyter) has printed a link
+        self.link_button = ttk.Button(tn, text="Open link", command=self.open_link)
         self.hint = tk.StringVar()
         ttk.Label(tn, textvariable=self.hint, foreground="gray").pack(side="left", padx=10)
         self.update_hint()
@@ -205,10 +212,13 @@ class App:
         self.proxy_box.grid(row=1, column=1, columnspan=2, sticky="w", padx=6, pady=(6, 0))
         ttk.Button(use, text="Open selected service", command=self.open_selected).grid(row=2, column=1, columnspan=2,
                                                                                          sticky="w", padx=6, pady=(6, 0))
+        ttk.Checkbutton(use, text="Open links from commands by themselves (e.g. Jupyter with its token)",
+                        variable=self.open_links, command=self.save).grid(
+            row=3, column=1, columnspan=3, sticky="w", padx=6, pady=(6, 0))
         if MACOS:
             ttk.Checkbutton(use, text="PSI addresses for Safari and all Mac apps (system proxy) ...",
                             variable=self.sysproxy, command=self.toggle_sysproxy).grid(
-                row=3, column=1, columnspan=3, sticky="w", padx=6, pady=(6, 0))
+                row=4, column=1, columnspan=3, sticky="w", padx=6, pady=(6, 0))
 
         # shortcuts
         sc = ttk.LabelFrame(main, text="Desktop icons and SSH aliases", padding=8)
@@ -260,6 +270,8 @@ class App:
         if hasattr(self, "proxy_box"):
             self.cfg.browser_proxy = self.proxy_ids().get(self.proxy_choice.get(), "")
         self.cfg.system_proxy = self.sysproxy.get()
+        if hasattr(self, "open_links"):
+            self.cfg.open_links = self.open_links.get()
         self.cfg.login_mode = {v: k for k, v in LOGIN_MODES.items()}.get(self.login.get(), "auto")
         inv = {v: k for k, v in browsers.NAMES.items()}
         self.cfg.browser = inv.get(self.browser.get(), self.cfg.browser)
@@ -403,6 +415,13 @@ class App:
         if self.was_running and not running:
             self.session_ended()
         self.was_running = bool(running)
+        link = tunnel.read_state().get("link") if running else None
+        if link:
+            self.link_button.configure(text="Open " + link.split("://", 1)[-1].split("?")[0].rstrip("/"))
+            if not self.link_button.winfo_ismapped():
+                self.link_button.pack(side="left", padx=4, after=self.state_label)
+        elif self.link_button.winfo_ismapped():
+            self.link_button.pack_forget()
         self.root.after(1500, self.poll)
 
     def ports_of(self, ids) -> list[int]:
@@ -437,6 +456,12 @@ class App:
             return
         self.pending = time.time()
         self.status.set("Connecting..." if mode == "app" else "Log in in the terminal window that just opened.")
+
+    def open_link(self):
+        link = tunnel.read_state().get("link")
+        if link:
+            import webbrowser
+            webbrowser.open(link)
 
     def stop(self):
         self.status.set("Disconnected." if tunnel.stop() else "Not connected.")

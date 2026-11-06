@@ -36,6 +36,7 @@ from .platforms import (PlatformError, detached_popen, find_ssh, kill_pid, open_
                         process_name, self_command)
 
 KEEPALIVE = ["-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3"]
+LINK_SETTLE = 2.0  # seconds a command's link must stay the same before it is opened
 LOCALHOST = "127.0.0.1"
 ASKPASS_ENV = "HOPPLA_ASKPASS"
 
@@ -58,6 +59,9 @@ def make_plan(cfg: Config, extra_ids=()) -> Plan:
             plan.inner.setdefault(s.via, []).append(s)
         else:
             plan.gateway.append(s)
+    for s in cfg.selected(extra_ids):  # a host with a command needs a connection of its own, which runs it
+        if s.type == "ssh" and s.command.strip():
+            plan.inner.setdefault(s.id, [])
     return plan
 
 
@@ -103,10 +107,24 @@ def via_localhost(cfg: Config, host: Service) -> list[str]:
     return ["-o", f"HostKeyAlias={host.remote_host}", "-p", str(host.local_port), f"{cfg.user}@{LOCALHOST}"]
 
 
-def inner_command(cfg: Config, host: Service, services: list[Service], ssh: str = "ssh") -> list[str]:
-    """Second connection, through the gateway's forward to `host`, carrying `services`."""
-    return [*base_options(ssh), "-N", "-o", "ExitOnForwardFailure=yes",
-            *forward_args(services), *via_localhost(cfg, host)]
+def inner_command(cfg: Config, host: Service, services: list[Service], ssh: str = "ssh",
+                  socks_port: int | None = None) -> list[str]:
+    """Second connection, through the gateway's forward to `host`, carrying `services`.
+
+    With a command on `host`: the connection runs it in a terminal (-tt: it gets SIGHUP when the
+    connection ends) and carries a SOCKS channel on `socks_port`, through which ports the command's
+    links point at are made reachable without another login (forwarder.py)."""
+    if not host.command.strip():
+        return [*base_options(ssh), "-N", "-o", "ExitOnForwardFailure=yes",
+                *forward_args(services), *via_localhost(cfg, host)]
+    return [*base_options(ssh), "-tt", "-o", "ExitOnForwardFailure=yes", *forward_args(services),
+            "-D", f"{LOCALHOST}:{socks_port}", *via_localhost(cfg, host), host.command]
+
+
+def free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind((LOCALHOST, 0))
+        return s.getsockname()[1]
 
 
 def login_command(cfg: Config, host: Service, ssh: str = "ssh") -> list[str]:
@@ -388,10 +406,22 @@ class Session:
         self.log = None
         self.lock = threading.Lock()
         self.pac = None  # sysproxy.PacServer while the system proxy is on
+        self.link: str | None = None  # the best link a command printed (links.preferred_link)
+        self.link_since = 0.0
+        self.link_opened: str | None = None
+        self.forwarders: dict = {}  # (host id, port) -> forwarder.Forwarder, for ports links point at
 
     # -- processes
-    def _popen(self, cmd: list[str], label: str, interactive: bool = False, account: str = "") -> subprocess.Popen:
-        if not self.background:
+    def _popen(self, cmd: list[str], label: str, interactive: bool = False, account: str = "",
+               on_line=None) -> subprocess.Popen:
+        """`on_line`: called with each line of output (a command's), which is then also read in terminal mode."""
+        if not self.background and on_line is not None:
+            # terminal: passwords are still asked there (ssh reads the terminal itself); the output is
+            # copied to it by _pump; stdin stays open so the command does not see an end of input
+            p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            p.tail = deque(maxlen=200)
+            threading.Thread(target=self._pump, args=(p, label, False, on_line), daemon=True).start()
+        elif not self.background:
             p = subprocess.Popen(cmd)  # terminal: the user sees and answers everything
             p.tail = deque(maxlen=0)
         else:
@@ -399,23 +429,37 @@ class Session:
             p = subprocess.Popen(cmd, stdin=subprocess.PIPE if interactive else subprocess.DEVNULL,
                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=askpass_env(label, account), **kw)
             p.tail = deque(maxlen=200)
-            threading.Thread(target=self._pump, args=(p, label, interactive), daemon=True).start()
+            threading.Thread(target=self._pump, args=(p, label, interactive, on_line), daemon=True).start()
         self.procs.append(p)
         self._save()
         return p
 
-    def _pump(self, p: subprocess.Popen, label: str, interactive: bool) -> None:
-        """Copy ssh output to the log; answer yes/no questions of the gateway with a dialog."""
+    def _pump(self, p: subprocess.Popen, label: str, interactive: bool, on_line=None) -> None:
+        """Copy ssh output to the log (terminal mode: to the terminal); answer yes/no questions of the
+        gateway with a dialog; hand complete lines to `on_line`."""
         recent = ""
+        partial = ""
         while True:
             chunk = p.stdout.read1(4096) if hasattr(p.stdout, "read1") else p.stdout.read(1)
             if not chunk:
                 break
             text = chunk.decode("utf-8", "replace")
             with self.lock:
-                self.log.write(text)
-                self.log.flush()
+                if self.log:
+                    self.log.write(text)
+                    self.log.flush()
+                else:
+                    sys.stdout.write(text)
+                    sys.stdout.flush()
             p.tail.append(text)
+            if on_line:
+                partial += text
+                *lines, partial = partial.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+                for line in lines:
+                    try:
+                        on_line(line)
+                    except Exception as e:  # noqa: BLE001 - never stop reading the output
+                        self.out(f"(link handling: {e})")
             recent = (recent + text)[-600:]
             if interactive and YES_NO.search(recent):
                 question = [ln for ln in recent.replace("\r", "").splitlines() if ln.strip()][-3:]
@@ -435,6 +479,7 @@ class Session:
             "services": [s.id for s in self.plan.services],
             "mode": "app" if self.background else "terminal",
             "started": time.time(),
+            "link": self.link,
         })
 
     def _tail(self, p) -> str:
@@ -449,9 +494,19 @@ class Session:
             self.out(f"Log in to {host.remote_host} if asked (password or SSH key).")
         for attempt in range(3):  # the gateway may need a moment before it lets us through
             t0 = time.time()
-            p = self._popen(inner_command(cfg, host, services, self.ssh), host.remote_host,
-                            account=f"{cfg.user}@{host.remote_host}")
-            if _wait_ports(p, [s.local_port for s in services]):
+            if host.command.strip():
+                socks = free_port()
+                if not self.background:
+                    self.out(f"Then {host.remote_host} runs: {host.command}")
+                p = self._popen(inner_command(cfg, host, services, self.ssh, socks_port=socks), host.remote_host,
+                                interactive=True, account=f"{cfg.user}@{host.remote_host}",
+                                on_line=lambda line, h=host, sp=socks, sv=services: self._command_line(h, sp, sv, line))
+                ports = [s.local_port for s in services] + [socks]
+            else:
+                p = self._popen(inner_command(cfg, host, services, self.ssh), host.remote_host,
+                                account=f"{cfg.user}@{host.remote_host}")
+                ports = [s.local_port for s in services]
+            if _wait_ports(p, ports):
                 return True
             quick = time.time() - t0 < 8
             if not quick or "Permission denied" in self._tail(p):
@@ -499,7 +554,63 @@ class Session:
             _summary(cfg, self.plan, self.out)
         gw.wait()
         self._system_proxy_off()
+        self._end_links()
         return True
+
+    # -- links a command prints
+    def _command_line(self, host: Service, socks: int, services: list[Service], line: str) -> None:
+        """A line of the command's output: a localhost link in it is made reachable here and remembered."""
+        from .forwarder import Forwarder
+        from .links import local_links, preferred_link
+        for scheme, port, rest in local_links(line):
+            fixed = next((s for s in services if s.type == "forward" and s.remote_port == port
+                          and s.remote_host in ("localhost", "127.0.0.1")), None)
+            if fixed:
+                local = fixed.local_port
+            elif port >= 1024:  # a self-started web service: its port is reachable through the SOCKS channel
+                f = self.forwarders.get((host.id, port))
+                if f is None:
+                    f = self.forwarders[(host.id, port)] = Forwarder(socks, port)
+                    self._note(f"Port {port} of {host.remote_host} is now reachable here as port {f.port}.")
+                local = f.port
+            else:
+                continue
+            best = preferred_link(self.link, f"{scheme}://localhost:{local}{rest}")
+            if best != self.link:
+                self.link, self.link_since = best, time.time()
+                self._save()
+                self._note(f"Link from {host.remote_host}: {best}")
+            return
+
+    def _open_links(self) -> None:
+        """Open the command's link in the browser once it has not changed for a moment (servers often
+        print their address first without and then with the token)."""
+        while True:
+            time.sleep(0.5)
+            link = self.link
+            if (self.cfg.open_links and link and link != self.link_opened
+                    and time.time() - self.link_since >= LINK_SETTLE):
+                self.link_opened = link
+                import webbrowser
+                try:
+                    webbrowser.open(link)
+                except Exception:  # noqa: BLE001
+                    pass
+
+    def _note(self, msg: str) -> None:
+        """A message of Hoppla's own: in the log (background) or the terminal."""
+        if self.log:
+            with self.lock:
+                self.log.write(f"Hoppla: {msg}\n")
+                self.log.flush()
+        else:
+            self.out(msg)
+
+    def _end_links(self) -> None:
+        for f in self.forwarders.values():
+            f.close()
+        self.forwarders.clear()
+        self.link = None
 
     def _system_proxy_on(self) -> None:
         from . import browsers, sysproxy
@@ -548,6 +659,7 @@ class Session:
             pass
         if self.background:
             self.log = open(log_file(), "w", encoding="utf-8", errors="replace")
+        threading.Thread(target=self._open_links, daemon=True).start()
         try:
             while True:
                 was_up = self.connect_once()
@@ -581,6 +693,7 @@ class Session:
             return 0
         finally:
             self._system_proxy_off()
+            self._end_links()
             _terminate(self.procs)
             clear_state()
             if self.log:
