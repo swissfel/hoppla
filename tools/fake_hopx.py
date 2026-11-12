@@ -24,6 +24,7 @@ import argparse
 import http.server
 import os
 import socket
+import re
 import socketserver
 import threading
 import time
@@ -209,33 +210,64 @@ class RaServer(paramiko.ServerInterface):
     def check_channel_pty_request(self, *args):
         return True
 
+    HOSTNAME = "ra-fake"
+
     def check_channel_exec_request(self, channel, command):
         text = command.decode(errors="replace")
         self.log(f"ra: run {text!r}")
-        if text.startswith("fake-serve "):  # a service on this host for as long as the command runs
-            threading.Thread(target=self._serve_while_open, args=(channel, int(text.split()[1])), daemon=True).start()
+        # Hoppla puts a browser stand-in in front of the command (sh lines a real host would run and
+        # this one ignores), so look for the command anywhere, not only at the beginning
+        serve = re.search(r"fake-(serve|browser) (\d+)", text)
+        if serve:
+            threading.Thread(target=self._serve_while_open, daemon=True,
+                             args=(channel, int(serve.group(2)), serve.group(1) == "browser")).start()
             return True
 
+        answer = self._answer(text)
+
         def reply():
-            channel.send(b"Hello from a fake PSI host\n")
+            channel.send(answer.encode())
             channel.send_exit_status(0)
             channel.close()
         threading.Timer(0.1, reply).start()
         return True
 
-    def _serve_while_open(self, channel, port):
+    def _answer(self, text):
+        """What a short command Hoppla runs by itself says (see Tunnel.ask)."""
+        if text.startswith("hostname"):  # what this host calls itself (Tunnel.learnHostNames)
+            return f"{self.HOSTNAME}\n{self.HOSTNAME}.psi.ch\n127.0.0.1 10.0.0.9\n"
+        if text.startswith("cat "):  # the page Jupyter opens instead of its address (Tunnel.linkInRedirectFile)
+            port = re.search(r"jpserver-(\d+)-open", text)
+            if port:
+                return ('<html><head><meta http-equiv="refresh" content="0; '
+                        f'url=http://localhost:{port.group(1)}/lab?token=fake"></head></html>\n')
+            return "cat: no such file\n"
+        if text.startswith("rm -rf "):  # the stand-in is taken away again on disconnect
+            return ""
+        return "Hello from a fake PSI host\n"
+
+    def _serve_while_open(self, channel, port, browser=False):
         """`fake-serve PORT`: listen on 127.0.0.1:PORT (each client gets one line) until the channel
-        closes -- like a server started over ssh with a terminal, which ends when the connection does."""
+        closes -- like a server started over ssh with a terminal, which ends when the connection does.
+        `fake-browser PORT`: the same, but it opens its page itself (like Jupyter and eco do) instead of
+        printing the address with the token -- Hoppla's browser stand-in on the host then prints it."""
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         listener.bind(("127.0.0.1", port))
         listener.listen(5)
         listener.settimeout(0.2)
         channel.send(f"fake service listening on {port}\r\n".encode())
-        # like Jupyter and eco web: first the plain address, a moment later the one with the token
+        # like Jupyter: its own name first, then localhost, and the address with the token last of all
+        channel.send(f"serving at http://{self.HOSTNAME}:{port}/\r\n".encode())
         channel.send(f"serving at http://localhost:{port}/\r\n".encode())
         time.sleep(0.5)
-        channel.send(f"open http://localhost:{port}/?token=fake\r\n".encode())
+        if browser:
+            # what Jupyter does: it opens a small page on the host that forwards to its address, so the
+            # address with the token is only in that page (Hoppla's stand-in prints what was opened)
+            channel.send(f"hoppla-open: file:///tmp/jpserver-{port}-open.html\r\n".encode())
+        else:
+            # coloured, as a program with a terminal prints it: the escapes must not end up in the link
+            channel.send(f"open \x1b[1;34mhttp://localhost:{port}/?token=fake\x1b[0m\r\n".encode())
         while not (channel.closed or channel.eof_received):
             try:
                 client, _ = listener.accept()
