@@ -177,6 +177,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="macOS: PSI addresses of all apps (Safari, ...) through the tunnel while connected")
     s.add_argument("--enable", action="append", metavar="ID")
     s.add_argument("--disable", action="append", metavar="ID")
+
+    s = sub.add_parser("serve", help="let the Hoppla web page use this session (local bridge, test build)")
+    from .bridge import add_arguments
+    add_arguments(s)
     return p
 
 
@@ -201,6 +205,9 @@ def main(argv: list[str] | None = None) -> int:
         made = install()
         print("\n".join(map(str, made)) if made else "Nothing to do (running from source or on macOS).")
         return 0
+    if a.cmd == "serve":
+        from .bridge import serve
+        return serve(a.origin, a.port, a.code)
     if a.cmd == "stop":
         print("stopped" if tunnel.stop() else "not running")
         return 0

@@ -22,6 +22,15 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m unittest discover -s tests -v
+      - name: Web page script syntax check
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          python - <<'PY'
+          import re
+          s = open("web/index.html", encoding="utf-8").read()
+          open("page.js", "w", encoding="utf-8").write(re.search(r"<script>(.*)</script>", s, re.S).group(1))
+          PY
+          node --check page.js
 
   # End-to-end: real ssh + Hoppla against the simulated hopx and Ra (tools/fake_hopx.py).
   simulate:

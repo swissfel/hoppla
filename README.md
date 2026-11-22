@@ -114,6 +114,21 @@ Hoppla takes the one with the token.
 *Ask password/OTP in: Terminal window* shows the login in a terminal instead of dialogs. Use it if the
 dialogs do not appear (older OpenSSH, e.g. early Windows 10 builds; *Automatic* picks this by itself).
 
+## Web page (test build)
+
+[swissfel.github.io/hoppla](https://swissfel.github.io/hoppla/) is a prototype web page that can borrow the
+session Hoppla already holds (hopx allows one session per user), so no second login is needed. Connect in
+Hoppla as usual, then run
+
+```
+hoppla serve
+```
+
+and type the pairing code it prints into the page. The bridge listens on 127.0.0.1 only, answers only that
+page, and only reaches ports of Hoppla services that are running; it never starts a login. Parts of the page
+(its own sign-in, the framed page) are still simulated; see [web/README.md](web/README.md) for what is real
+and the test list.
+
 ## Troubleshooting
 
 - **"Local ports already in use"**: another program uses that port. Edit the service and pick another local port.

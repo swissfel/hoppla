@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hoppla page link (test build)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EEF3F6;--surface:#FFFFFF;--ink:#12212B;--muted:#586C7A;--line:#CBD7DF;
+  --route:#1B5EBE;--ok:#16905F;--warn:#B86E00;--bad:#C0392B;
+  --codebg:#0E1B24;--codeink:#DCE9F0;--on-route:#FFFFFF;--soft:#E3ECF2;
+  color-scheme:light;box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0C161D;--surface:#13222C;--ink:#E3EDF2;--muted:#8DA3B1;--line:#26394A;
+    --route:#6AA4F5;--ok:#3CC58E;--warn:#E3A24A;--bad:#F07A6B;
+    --codebg:#08121A;--codeink:#CFE0EA;--on-route:#0C161D;--soft:#1A2D3A;color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0C161D;--surface:#13222C;--ink:#E3EDF2;--muted:#8DA3B1;--line:#26394A;
+  --route:#6AA4F5;--ok:#3CC58E;--warn:#E3A24A;--bad:#F07A6B;
+  --codebg:#08121A;--codeink:#CFE0EA;--on-route:#0C161D;--soft:#1A2D3A;color-scheme:dark;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 16px/1.5 "Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-text-size-adjust:100%}
+.wrap{max-width:680px;margin:0 auto;padding:20px 16px 56px}
+h1{font-size:1.75rem;line-height:1.15;margin:8px 0 6px;font-weight:600;letter-spacing:-.01em}
+h2{font-size:1.1rem;margin:0 0 10px;font-weight:600}
+p{margin:0 0 10px}
+.lede{color:var(--muted);margin-bottom:18px}
+#buildInfo{margin:0 0 10px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+.banner{border:1px solid var(--warn);background:var(--soft);border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:.92rem}
+.banner[hidden]{display:none}
+.hint{font-size:.88rem;color:var(--muted)}
+.mono{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+
+/* route */
+.route{padding-top:2px}
+.node{position:relative;display:flex;gap:12px;padding-bottom:14px}
+.node:last-child{padding-bottom:0}
+.node::before{content:"";position:absolute;left:8px;top:18px;bottom:-4px;width:2px;background:var(--rc,var(--line))}
+.node:last-child::before{display:none}
+.dot{flex:none;width:18px;height:18px;border-radius:50%;border:3px solid var(--rc,var(--line));background:var(--surface);margin-top:3px;position:relative;z-index:1}
+.node .t{font-weight:600;line-height:1.3}
+.node .s{color:var(--muted);font-size:.9rem;word-break:break-all}
+.state{font-size:.88rem;margin-top:10px;color:var(--rc,var(--muted));font-weight:600}
+
+/* form */
+label{display:block;font-size:.88rem;color:var(--muted);margin:0 0 3px}
+input[type=text],input[type=password]{width:100%;font:400 1rem "Instrument Sans",system-ui,sans-serif;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:9px 10px;min-height:42px}
+button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--route);outline-offset:2px}
+.field{margin-bottom:12px}
+.btn{font:500 .95rem "Instrument Sans",system-ui,sans-serif;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:9px 14px;min-height:42px;cursor:pointer}
+.btn.primary{background:var(--route);border-color:var(--route);color:var(--on-route)}
+.btn.danger{color:var(--bad)}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+details{margin-bottom:12px}
+summary{cursor:pointer;color:var(--muted);font-size:.92rem;min-height:32px;padding:4px 0}
+details .inner{padding-top:8px}
+
+/* terminal + page */
+.term{background:var(--codebg);color:var(--codeink);border-radius:9px;padding:10px 12px;height:220px;overflow-y:auto;font-size:.8rem;line-height:1.5;font-family:"JetBrains Mono",ui-monospace,monospace}
+.ln{white-space:pre-wrap;word-break:break-word}
+.ln.dim{opacity:.65}.ln.good{color:#5EDC9F}.ln.err{color:#FF8E80}.ln.cmd{color:#8CB8FF}
+.askrow{display:flex;gap:8px;margin-top:8px;align-items:center}
+.askrow[hidden]{display:none}
+.askrow span{font-size:.88rem;color:var(--muted);flex:none;max-width:45%}
+.askrow input{flex:1}
+.frame{border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:12px;background:var(--surface)}
+.frame[hidden]{display:none}
+.bar{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--soft);border-bottom:1px solid var(--line);font-size:.85rem}
+.bar .u{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lock{color:var(--ok);font-weight:600}
+.page{padding:16px;min-height:150px}
+.page .tag{display:inline-block;font-size:.8rem;padding:2px 9px;border-radius:99px;border:1px solid var(--warn);color:var(--warn);margin-bottom:10px}
+
+/* code */
+pre{margin:6px 0 0;background:var(--codebg);color:var(--codeink);border-radius:8px;padding:11px 12px;font-size:.8rem;line-height:1.55;overflow-x:auto;white-space:pre}
+.step{margin-bottom:14px}
+.step h3{font-size:1rem;margin:0 0 2px;font-weight:600}
+.copy{margin-top:6px;font-size:.85rem;min-height:36px;padding:5px 11px}
+
+.saved{display:flex;flex-wrap:wrap;align-items:center;gap:8px;border-top:1px solid var(--line);padding:10px 0}
+.saved:first-of-type{border-top:0}
+.saved .nm{flex:1 1 140px;font-weight:500;word-break:break-word}
+.saved small{display:block;color:var(--muted);font-weight:400;word-break:break-all}
+.svcrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-top:1px solid var(--line);padding:8px 0;font-size:.92rem}
+.svcrow:first-child{border-top:0}
+.svcrow .nm{flex:1 1 160px;word-break:break-word}
+.svcrow small{display:block;color:var(--muted)}
+.pill{font-size:.78rem;padding:1px 8px;border-radius:99px;border:1px solid var(--line)}
+.pill.on{border-color:var(--ok);color:var(--ok)}
+.pill.off{border-color:var(--warn);color:var(--warn)}
+.out{font-size:.9rem;margin-top:10px}
+.out.err{color:var(--bad)}
+.out.good{color:var(--ok)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:9px 15px;border-radius:99px;font-size:.9rem;opacity:0;pointer-events:none;transition:opacity .2s;max-width:90vw;text-align:center}
+.toast.on{opacity:1}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Hoppla page link</h1>
+  <p class="hint" id="buildInfo"></p>
+  <p class="lede">Open one PSI page through the gateway, in this tab only. Save the setup as a link and the same page opens again after you sign in.</p>
+
+  <div class="banner" id="banner" hidden></div>
+
+  <div class="card">
+    <div class="route" id="route"></div>
+    <div class="state" id="routeState"></div>
+  </div>
+
+  <div class="card">
+    <h2>Desktop Hoppla on this computer</h2>
+    <p class="hint">If Hoppla already holds the gateway session, this page can borrow it, so no second login is needed. Start the bridge next to Hoppla first. Its command line is shown below the buttons.</p>
+    <div class="field"><label for="bUrl">Bridge address</label><input type="text" id="bUrl" value="http://127.0.0.1:8760" autocapitalize="off" spellcheck="false"></div>
+    <div class="field"><label for="bCode">Pairing code (printed by the bridge)</label><input type="text" id="bCode" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="abcd-2345"></div>
+    <div class="btns">
+      <button class="btn primary" id="bFind">Find Hoppla</button>
+      <button class="btn" id="bTest" disabled>Test channel to cluster</button>
+    </div>
+    <div class="out" id="bOut" role="status"></div>
+    <div id="bSvcs"></div>
+    <details style="margin-top:10px"><summary>Bridge command</summary><div class="inner"><pre id="bCmd"></pre></div></details>
+  </div>
+
+  <div class="card">
+    <div class="field"><label for="fTarget">Page to open</label>
+      <input type="text" id="fTarget" inputmode="url" autocapitalize="off" spellcheck="false"></div>
+    <div class="field"><label for="fUser">PSI user name</label>
+      <input type="text" id="fUser" autocomplete="username" autocapitalize="off" spellcheck="false"></div>
+    <details>
+      <summary>Route details</summary>
+      <div class="inner">
+        <div class="field"><label for="fGate">Gateway</label><input type="text" id="fGate" autocapitalize="off" spellcheck="false"></div>
+        <div class="field"><label for="fCluster">Cluster the page is reached from</label><input type="text" id="fCluster" autocapitalize="off" spellcheck="false"></div>
+        <div class="field"><label for="fName">Name of this link</label><input type="text" id="fName"></div>
+      </div>
+    </details>
+    <div class="btns">
+      <button class="btn primary" id="openBtn">Sign in and open page</button>
+      <button class="btn" id="closeBtn" disabled>Close page</button>
+      <button class="btn" id="endBtn" disabled>End session</button>
+    </div>
+  </div>
+
+  <div class="card" id="sessionCard" hidden>
+    <h2>Sign-in</h2>
+    <p class="hint">Simulation. Demo password: <span class="mono">secret</span>, demo MFA code: <span class="mono">123456</span>. Nothing leaves this page.</p>
+    <div class="term" id="termOut" aria-live="polite"></div>
+    <div class="askrow" id="termInput" hidden><span id="termLab"></span><input type="password" id="termIn" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+    <div class="frame" id="frame" hidden>
+      <div class="bar"><span class="lock">Secure</span><span class="u mono" id="frameUrl"></span></div>
+      <div class="page" id="framePage"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Keep this link</h2>
+    <p class="hint">The link remembers the page and the route, never your password. Opening it asks you to sign in, then loads the page again.</p>
+    <div class="btns">
+      <button class="btn primary" id="saveBtn">Save in this browser</button>
+      <button class="btn" id="shareBtn">Create portable link</button>
+    </div>
+    <div id="linkInfo" style="margin-top:12px" hidden>
+      <label for="linkOut" id="linkLab">Link</label>
+      <input type="text" id="linkOut" readonly>
+      <button class="btn copy" id="copyLink">Copy link</button>
+    </div>
+    <div id="savedList" style="margin-top:12px"></div>
+  </div>
+
+  <div class="card">
+    <h2>One gateway session, shared</h2>
+    <p class="hint">The gateway allows one session per user, so this page avoids opening a second one. It looks in this order:</p>
+    <ol class="hint" style="padding-left:20px;margin:0 0 10px">
+      <li><b>Desktop Hoppla on this computer (planned).</b> A small local helper would let this page borrow the open session. It is also the only way other programs, such as your normal browser profile or an RDP client, can share a connection. Not available in this preview.</li>
+      <li><b>Another tab of this page.</b> Works in this preview: sign in once, open the page in a second tab, and that tab skips the sign-in.</li>
+      <li><b>A new sign-in</b>, only if neither exists. That session belongs to this page, and only its tabs can use it. The gateway may refuse a desktop Hoppla login while it is open, so use End session first.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>Run it in your own terminal</h2>
+    <p class="hint">Until live SSH runs in the browser, these two commands open the same route by hand.</p>
+    <div id="cmdOut"></div>
+  </div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(function(){
+"use strict";
+var $=function(s){return document.querySelector(s)};
+var DEFAULT_TARGET="https://jupytera.psi.ch/";
+var cfg=defaults(), state="idle", runId=0, ignoreHash=null, owning=false, reusing=false, ownerUser="", ownerSince=0,
+    BC=("BroadcastChannel" in window)?new BroadcastChannel("hoppla-broker"):null;
+
+function uid(){return Math.random().toString(36).slice(2,8)}
+function defaults(){return{v:2,name:"Jupytera via Ra",user:"",gateway:"hopx.psi.ch",cluster:"ra.psi.ch",target:DEFAULT_TARGET}}
+function hostSafe(s){return String(s||"").replace(/[^A-Za-z0-9._-]/g,"")}
+function parseTarget(t){
+  try{var u=new URL(String(t).trim()||DEFAULT_TARGET);if(u.protocol!=="https:"&&u.protocol!=="http:")throw 0;
+    var host=hostSafe(u.hostname);if(!host)throw 0;
+    return{host:host,port:u.port?parseInt(u.port,10):(u.protocol==="https:"?443:80),https:u.protocol==="https:",path:(u.pathname+u.search).slice(0,200)||"/",ok:true}}
+  catch(e){return{host:"jupytera.psi.ch",port:443,https:true,path:"/",ok:false}}
+}
+function normalize(c){
+  var d=defaults();c=c&&typeof c==="object"?c:{};
+  var t=parseTarget(c.target||d.target);
+  return{v:2,name:String(c.name||d.name).slice(0,60),user:String(c.user||"").slice(0,40),
+    gateway:String(c.gateway||d.gateway).slice(0,100),cluster:String(c.cluster||d.cluster).slice(0,100),
+    target:t.ok?String(c.target).trim().slice(0,300):d.target};
+}
+function build(c){
+  var user=hostSafe(c.user)||"USER",gw=hostSafe(c.gateway)||"hopx.psi.ch",cl=hostSafe(c.cluster)||"ra.psi.ch",t=parseTarget(c.target);
+  var base="-F none -o StrictHostKeyChecking=accept-new",lp=8443;
+  return{user:user,gw:gw,cl:cl,t:t,
+    step1:"ssh -tt "+base+" -o NumberOfPasswordPrompts=1 -L 2201:"+cl+":22 "+user+"@"+gw,
+    step2:"ssh "+base+" -o HostKeyAlias="+cl+" -N -p 2201 -L "+lp+":"+t.host+":"+t.port+" "+user+"@localhost",
+    open:(t.https?"https":"http")+"://localhost:"+lp+t.path};
+}
+
+/* ---------- storage + link codes ---------- */
+var mem={};
+function put(k,v){try{localStorage.setItem(k,v);return true}catch(e){mem[k]=v;return false}}
+function get(k){try{var v=localStorage.getItem(k);return v===null?(mem[k]||null):v}catch(e){return mem[k]||null}}
+function profiles(){try{return JSON.parse(get("hoppla:links")||"{}")||{}}catch(e){return{}}}
+function toB36(b){var h="01";for(var i=0;i<b.length;i++)h+=b[i].toString(16).padStart(2,"0");return BigInt("0x"+h).toString(36)}
+function fromB36(s){var n=0n;for(var i=0;i<s.length;i++){var d=parseInt(s[i],36);if(isNaN(d))throw new Error("bad");n=n*36n+BigInt(d)}
+  var h=n.toString(16);if(h.length%2)h="0"+h;if(h.slice(0,2)!=="01")throw new Error("bad");h=h.slice(2);
+  var b=new Uint8Array(h.length/2);for(var j=0;j<b.length;j++)b[j]=parseInt(h.substr(j*2,2),16);return b}
+async function pack(c){
+  var raw=new TextEncoder().encode(JSON.stringify({name:c.name,user:c.user,gateway:c.gateway,cluster:c.cluster,target:c.target})),flag="r",bytes=raw;
+  if("CompressionStream" in window){try{var st=new Blob([raw]).stream().pipeThrough(new CompressionStream("deflate-raw"));
+    bytes=new Uint8Array(await new Response(st).arrayBuffer());flag="z"}catch(e){bytes=raw;flag="r"}}
+  return flag+toB36(bytes)}
+async function unpack(code){
+  var flag=code[0],bytes=fromB36(code.slice(1));
+  if(flag==="z"){var st=new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));bytes=new Uint8Array(await new Response(st).arrayBuffer())}
+  else if(flag!=="r")throw new Error("bad");
+  return JSON.parse(new TextDecoder().decode(bytes))}
+function baseUrl(){return location.href.split("#")[0]}
+
+/* ---------- ui helpers ---------- */
+var tt;function toast(m){var t=$("#toast");t.textContent=m;t.classList.add("on");clearTimeout(tt);tt=setTimeout(function(){t.classList.remove("on")},2200)}
+function copyText(text,src){
+  function fb(){if(src){src.focus();src.select();try{document.execCommand("copy");toast("Copied");return}catch(e){}}toast("Select the text and copy it")}
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(text).then(function(){toast("Copied")},fb);else fb()}
+function el(tag,attrs,kids){var e=document.createElement(tag);attrs=attrs||{};
+  Object.keys(attrs).forEach(function(k){if(k==="text")e.textContent=attrs[k];else if(k==="class")e.className=attrs[k];else e.setAttribute(k,attrs[k])});
+  (kids||[]).forEach(function(c){if(c)e.appendChild(c)});return e}
+function setBanner(m){var b=$("#banner");if(m){b.textContent=m;b.hidden=false}else b.hidden=true}
+
+function renderRoute(){
+  var b=build(cfg),col=(state==="open"||(B.info&&B.info.connected))?"var(--ok)":state==="signing"?"var(--warn)":"var(--line)";
+  var r=$("#route");r.innerHTML="";r.style.setProperty("--rc",col);
+  function node(t,s){var n=el("div",{class:"node"});n.appendChild(el("div",{class:"dot"}));
+    var d=el("div");d.appendChild(el("div",{class:"t",text:t}));if(s)d.appendChild(el("div",{class:"s",text:s}));n.appendChild(d);r.appendChild(n)}
+  node("This browser tab",cfg.user?"Signed in as "+b.user:"Enter your PSI user name");
+  node("Gateway",b.gw);
+  node("Cluster",b.cl);
+  node("Page",b.t.host+(b.t.port!==443&&b.t.port!==80?":"+b.t.port:"")+b.t.path);
+  var st=$("#routeState");st.style.setProperty("--rc",col);
+  var base=(B.info&&B.info.connected&&state==="idle")?"Desktop Hoppla session open":state==="open"?"Page open (simulation)":state==="signing"?"Signing in (simulation)":(owning?"Gateway session open, no page open":"Not connected");
+  var who=owning?" \u00B7 session shared with other tabs":reusing?" \u00B7 using another tab\u2019s session":"";
+  st.textContent=base+who;
+}
+function renderCmds(){
+  var b=build(cfg),out=$("#cmdOut");out.innerHTML="";
+  function block(title,desc,code){var d=el("div",{class:"step"});d.appendChild(el("h3",{text:title}));d.appendChild(el("p",{class:"hint",text:desc}));
+    d.appendChild(el("pre",{text:code}));var cb=el("button",{class:"btn copy",type:"button",text:"Copy"});
+    cb.addEventListener("click",function(){var ta=el("textarea");ta.value=code;ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);copyText(code,ta);document.body.removeChild(ta)});
+    d.appendChild(cb);out.appendChild(d)}
+  block("1. Gateway session","Asks for your PSI password and MFA. Keep it open.",b.step1);
+  block("2. Forward the page from the cluster","Second terminal. Then open "+b.open+" in any browser; a certificate warning is expected.",b.step2);
+}
+function renderSaved(){
+  var box=$("#savedList");box.innerHTML="";var p=profiles(),ids=Object.keys(p).sort(function(a,b){return (p[b].t||0)-(p[a].t||0)});
+  if(!ids.length)return;
+  box.appendChild(el("label",{text:"Saved in this browser"}));
+  ids.forEach(function(id){
+    var row=el("div",{class:"saved"}),nm=el("div",{class:"nm",text:p[id].cfg&&p[id].cfg.name||"Unnamed"});
+    nm.appendChild(el("small",{text:p[id].cfg&&p[id].cfg.target||""}));row.appendChild(nm);
+    var o=el("button",{class:"btn",type:"button",text:"Open"});o.addEventListener("click",function(){location.hash="p-"+id});
+    var c=el("button",{class:"btn",type:"button",text:"Copy link"});c.addEventListener("click",function(){var ta=el("textarea");ta.value=baseUrl()+"#p-"+id;ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);copyText(ta.value,ta);document.body.removeChild(ta)});
+    var d=el("button",{class:"btn danger",type:"button",text:"Delete"});d.addEventListener("click",function(){var pp=profiles();delete pp[id];put("hoppla:links",JSON.stringify(pp));renderSaved();toast("Deleted")});
+    row.appendChild(o);row.appendChild(c);row.appendChild(d);box.appendChild(row)});
+}
+function renderForm(){$("#fTarget").value=cfg.target;$("#fUser").value=cfg.user;$("#fGate").value=cfg.gateway;$("#fCluster").value=cfg.cluster;$("#fName").value=cfg.name}
+function derived(){renderRoute();renderCmds();put("hoppla:last",JSON.stringify(cfg))}
+
+/* ---------- simulated transport ---------- */
+/* A real transport would implement the same three calls:
+   login(prompts) -> opens gateway session, then cluster session
+   openPage(url)  -> loads the page through an SSH channel from the cluster
+   close()        -> tears the session down                              */
+var T={out:$("#termOut"),row:$("#termInput"),inp:$("#termIn"),lab:$("#termLab"),pending:null};
+function log(t,cls){var d=document.createElement("div");d.className="ln "+(cls||"");d.textContent=t;T.out.appendChild(d);T.out.scrollTop=T.out.scrollHeight}
+function ask(label,secret){return new Promise(function(res,rej){T.lab.textContent=label;T.inp.type=secret?"password":"text";T.inp.value="";T.row.hidden=false;T.inp.focus();T.pending={res:res,rej:rej,secret:secret,label:label}})}
+T.inp.addEventListener("keydown",function(e){
+  if(e.key!=="Enter"||!T.pending)return;var p=T.pending,v=T.inp.value;T.pending=null;T.row.hidden=true;T.inp.value="";
+  log(p.label+" "+(p.secret?"\u2022\u2022\u2022\u2022\u2022\u2022":v),"dim");p.res(v)});
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
+function setState(s){state=s;renderRoute();$("#openBtn").disabled=(s!=="idle");$("#closeBtn").disabled=(s==="idle")}
+function updSession(){$("#endBtn").disabled=!(owning||reusing);renderRoute()}
+function showFrame(b){
+  $("#frameUrl").textContent=(b.t.https?"https":"http")+"://"+b.t.host+b.t.path;
+  var pg=$("#framePage");pg.innerHTML="";
+  pg.appendChild(el("span",{class:"tag",text:"Simulated page"}));
+  pg.appendChild(el("p",{text:"In the live version, the real page from "+b.t.host+" appears here. Other tabs and windows of this browser keep their normal connection."}));
+  $("#frame").hidden=false}
+/* Session broker: one tab holds the gateway session, other tabs of this page borrow it. */
+function findOwner(user){return new Promise(function(res){
+  if(!BC){res(null);return}
+  var done=false,req=uid();
+  function on(e){var m=e.data||{};if(m.type==="owner-here"&&m.req===req&&m.user===user){done=true;BC.removeEventListener("message",on);res(m)}}
+  BC.addEventListener("message",on);BC.postMessage({type:"who-owns",req:req});
+  setTimeout(function(){if(!done){BC.removeEventListener("message",on);res(null)}},500)})}
+function closeAll(silent){
+  runId++;if(T.pending){T.pending.rej(new Error("abort"));T.pending=null;T.row.hidden=true}
+  $("#frame").hidden=true;if(state!=="idle"&&!silent)log("Closed.","dim");setState("idle")}
+async function openPage(){
+  if(!cfg.user.trim()){toast("Enter your PSI user name first");$("#fUser").focus();return}
+  var t=parseTarget(cfg.target);
+  if(!t.ok){toast("That page address is not valid");return}
+  var id=++runId,alive=function(){if(id!==runId)throw new Error("abort")},b=build(cfg);
+  $("#sessionCard").hidden=false;T.out.innerHTML="";$("#frame").hidden=true;setState("signing");
+  $("#sessionCard").scrollIntoView({behavior:"smooth",block:"start"});
+  try{
+    if(owning&&ownerUser===cfg.user.trim()){
+      log("Your gateway session is still open. Reusing it, no new sign-in.","good");await sleep(300);alive();
+      showFrame(b);setState("open");return}
+    var o=await findOwner(cfg.user.trim());alive();
+    if(o){
+      reusing=true;updSession();
+      log("Another tab already holds the gateway session (since "+new Date(o.since).toLocaleTimeString()+"). Reusing it, no new sign-in.","good");
+      await sleep(300);alive();showFrame(b);setState("open");
+      log("Page open. The gateway still sees one session.","good");return}
+    reusing=false;updSession();
+    log("Gateway: "+b.user+"@"+b.gw,"cmd");await sleep(400);alive();
+    var ok=false;
+    for(var n=1;n<=3&&!ok;n++){
+      var pw=await ask("Password:",true);alive();
+      var code=await ask("MFA code:",false);alive();
+      await sleep(500);alive();
+      if(pw==="secret"&&code==="123456")ok=true;
+      else{log("Sign-in failed ("+n+"/3). Wait for a fresh code before retrying.","err");if(n<3){await sleep(1000);alive()}}
+    }
+    if(!ok){log("Too many failed attempts. The real gateway blocks your address for a while after this.","err");setState("idle");return}
+    log("Gateway session open.","good");await sleep(400);alive();
+    log("Cluster: "+b.user+"@"+b.cl,"cmd");
+    var cp=await ask("Cluster password:",true);alive();
+    if(!cp){log("No password entered.","err");setState("idle");return}
+    await sleep(400);alive();log("Cluster login ok.","good");
+    await sleep(400);alive();log("Opening "+b.t.host+":"+b.t.port+" from "+b.cl+" \u2026","cmd");
+    await sleep(600);alive();
+    owning=true;ownerUser=cfg.user.trim();ownerSince=Date.now();updSession();
+    showFrame(b);setState("open");
+    log("Page open. Only this tab shows it; other tabs can reuse the session.","good");
+  }catch(e){if(e.message!=="abort")log("Error: "+e.message,"err")}
+}
+
+
+/* ---------- desktop Hoppla bridge (real, talks to 127.0.0.1) ---------- */
+var B={url:"http://127.0.0.1:8760",code:"",info:null,paired:false};
+(function(){var v=get("hoppla:bridge");if(v){try{var o=JSON.parse(v);B.url=o.url||B.url;B.code=o.code||""}catch(e){}}})();
+function saveBridge(){put("hoppla:bridge",JSON.stringify({url:B.url,code:B.code}))}
+function bridgeCmd(){var o=location.origin&&location.origin!=="null"?location.origin:"https://YOURNAME.github.io";
+  return o==="https://swissfel.github.io"?"hoppla serve":"hoppla serve --origin "+o}
+function bOut(msg,cls){var o=$("#bOut");o.textContent=msg;o.className="out "+(cls||"")}
+function fmtDur(sec){var h=Math.floor(sec/3600),m=Math.floor(sec%3600/60);return h+" h "+m+" min"}
+async function bfetch(path,withCode){
+  var ctl=new AbortController(),to=setTimeout(function(){ctl.abort()},4000);
+  try{return await fetch(B.url+path,{headers:withCode?{"X-Hoppla-Code":B.code}:{},cache:"no-store",signal:ctl.signal})}
+  finally{clearTimeout(to)}}
+function matchService(){
+  if(!B.info||!B.info.connected)return null;var t=parseTarget(cfg.target);
+  return B.info.services.filter(function(s){return s.type==="forward"&&s.target===t.host&&Number(s.target_port)===t.port})[0]||null}
+function renderBridge(){
+  var box=$("#bSvcs");box.innerHTML="";
+  $("#bTest").disabled=!(B.info&&B.info.connected);
+  if(!B.info||!B.info.connected){renderRoute();return}
+  B.info.services.forEach(function(s){
+    var row=el("div",{class:"svcrow"}),nm=el("div",{class:"nm",text:s.name});
+    nm.appendChild(el("small",{text:s.type+" on port "+s.port+(s.target?" to "+s.target+":"+s.target_port:"")}));
+    row.appendChild(nm);row.appendChild(el("span",{class:"pill "+(s.listening?"on":"off"),text:s.listening?"listening":"not listening"}));
+    box.appendChild(row)});
+  var m=matchService(),t=parseTarget(cfg.target);
+  if(m&&m.listening){
+    var b=el("button",{class:"btn primary",type:"button",text:"Open "+t.host+" through Hoppla"});
+    b.style.marginTop="10px";
+    b.addEventListener("click",function(){var base=(m.url||("https://localhost:"+m.port+"/")).replace(/\/$/,"");
+      window.open(base+t.path,"_blank","noopener")});
+    box.appendChild(b);
+    box.appendChild(el("p",{class:"hint",text:"Opens in a new tab through the forward Hoppla already runs. Your other tabs keep their normal connection. The browser may show a certificate warning for localhost."}));
+  }else{
+    box.appendChild(el("p",{class:"hint",text:"Hoppla has no running forward to "+t.host+":"+t.port+". Add one in Hoppla (Port forward through your cluster), then press Find Hoppla again."}));
+  }
+  renderRoute();
+}
+async function findHoppla(){
+  B.url=$("#bUrl").value.trim().replace(/\/$/,"");B.code=$("#bCode").value.trim();saveBridge();
+  B.info=null;renderBridge();bOut("Looking for the bridge \u2026");
+  var r;
+  try{r=await bfetch("/hello",false)}
+  catch(e){bOut("No bridge found at "+B.url+". Start it next to Hoppla, then try again. If it is running, your browser may be blocking access to local programs: allow it when asked, or see the README test list.","err");return}
+  if(r.status===403){bOut("The bridge refused this page. Start it with: hoppla serve --origin "+location.origin,"err");return}
+  if(!B.code){bOut("Bridge found. Type the pairing code it printed.","");return}
+  try{r=await bfetch("/status",true)}catch(e){bOut("The bridge stopped answering.","err");return}
+  if(r.status===401){bOut("Wrong pairing code.","err");return}
+  if(!r.ok){bOut("The bridge answered with an error ("+r.status+").","err");return}
+  B.info=await r.json();B.paired=true;
+  if(!B.info.connected){bOut("Bridge paired. Hoppla has no open session. Connect in Hoppla (or use the simulator below), then press Find Hoppla again.","");renderBridge();return}
+  bOut("Hoppla session open for "+(B.info.user||"your account")+". About "+fmtDur(B.info.expires_in_s)+" left before the gateway ends it.","good");
+  renderBridge();
+}
+function testChannel(){
+  var info=B.info;if(!info||!info.connected)return;
+  var sshSvc=info.services.filter(function(s){return s.type==="ssh"&&s.listening})[0];
+  if(!sshSvc){bOut("No listening SSH service in Hoppla. Enable the cluster SSH service.","err");return}
+  bOut("Opening a channel to "+sshSvc.target+" through the open session \u2026");
+  var ws=new WebSocket(B.url.replace(/^http/,"ws")+"/ws"),done=false,t=setTimeout(function(){if(!done){done=true;bOut("No answer from the cluster within 8 seconds.","err");try{ws.close()}catch(e){}}},8000);
+  ws.binaryType="arraybuffer";
+  ws.onopen=function(){ws.send("auth "+B.code+" "+sshSvc.port)};
+  ws.onmessage=function(ev){
+    if(typeof ev.data==="string")return;
+    var line=new TextDecoder().decode(new Uint8Array(ev.data)).split("\n")[0].trim();
+    if(done)return;done=true;clearTimeout(t);
+    if(/^SSH-/.test(line))bOut("Reached "+sshSvc.target+" through the existing session. It answered: "+line+". No second gateway login was needed.","good");
+    else bOut("Connected, but the answer was not an SSH banner.","err");
+    try{ws.close()}catch(e){}};
+  ws.onclose=function(ev){if(done)return;done=true;clearTimeout(t);
+    bOut(ev.code===4401?"The bridge refused the pairing code.":ev.code===4403?"The bridge only reaches ports of running Hoppla services.":"The channel closed before the cluster answered.","err")};
+  ws.onerror=function(){if(done)return;done=true;clearTimeout(t);bOut("Could not open the WebSocket. The browser may be blocking access to local programs.","err")};
+}
+
+/* ---------- hash handling ---------- */
+async function loadHash(){
+  var h=location.hash.replace(/^#/,"");if(!h)return false;
+  if(h===ignoreHash){ignoreHash=null;return true}
+  try{
+    if(h.indexOf("p-")===0){
+      var p=profiles()[h.slice(2)];
+      if(!p){setBanner("This link was saved in another browser or has been deleted. Use a portable link to move a setup between devices.");return false}
+      cfg=normalize(p.cfg);setBanner("");
+    }else if(h.indexOf("s-")===0){
+      cfg=normalize(await unpack(h.slice(2)));
+      setBanner("This link came from someone else. It points to "+parseTarget(cfg.target).host+". Check that you expect that page before you sign in.");
+    }else return false;
+    closeAll(true);renderForm();derived();
+    if(cfg.user.trim())openPage();else{toast("Enter your PSI user name to open the page");$("#fUser").focus()}
+    return true;
+  }catch(e){setBanner("That link could not be read. Ask for a new portable link.");return false}
+}
+
+/* ---------- wiring ---------- */
+function bind(id,key){$(id).addEventListener("input",function(){cfg[key]=$(id).value;derived()})}
+bind("#fTarget","target");bind("#fUser","user");bind("#fGate","gateway");bind("#fCluster","cluster");bind("#fName","name");
+$("#fTarget").addEventListener("blur",function(){if(!parseTarget(cfg.target).ok)toast("That page address is not valid")});
+$("#bUrl").value=B.url;$("#bCode").value=B.code;$("#bCmd").textContent=bridgeCmd();
+$("#bFind").addEventListener("click",findHoppla);$("#bTest").addEventListener("click",testChannel);
+var bi=$("#buildInfo");bi.textContent="Build: "+("__BUILD__"==="__"+"BUILD__"?"local copy":"__BUILD__");
+$("#openBtn").addEventListener("click",openPage);
+$("#closeBtn").addEventListener("click",function(){closeAll(false)});
+$("#endBtn").addEventListener("click",function(){
+  var was=owning;owning=false;reusing=false;if(was&&BC)BC.postMessage({type:"released"});
+  closeAll(true);log("Gateway session ended.","dim");updSession();toast("Session ended")});
+if(BC)BC.addEventListener("message",function(e){var m=e.data||{};
+  if(m.type==="who-owns"&&owning)BC.postMessage({type:"owner-here",req:m.req,user:ownerUser,since:ownerSince});
+  if(m.type==="released"&&reusing){reusing=false;closeAll(true);log("The tab that held the gateway session ended it. Sign in again to continue.","err");updSession()}});
+window.addEventListener("pagehide",function(){if(owning&&BC)BC.postMessage({type:"released"})});
+function showLink(label,url){$("#linkLab").textContent=label;$("#linkOut").value=url;$("#linkInfo").hidden=false}
+$("#saveBtn").addEventListener("click",function(){
+  if(!parseTarget(cfg.target).ok){toast("Fix the page address first");return}
+  var p=profiles(),id=uid();p[id]={t:Date.now(),cfg:cfg};put("hoppla:links",JSON.stringify(p));
+  var kept=get("hoppla:links")!==null;ignoreHash="p-"+id;location.hash="p-"+id;
+  showLink("Personal link",baseUrl()+"#p-"+id);renderSaved();
+  toast(kept?"Saved. Bookmark this address.":"Saved for this visit only. Your browser blocks storage.");
+});
+$("#shareBtn").addEventListener("click",async function(){
+  if(!parseTarget(cfg.target).ok){toast("Fix the page address first");return}
+  try{var code=await pack(cfg);showLink("Portable link (works on any device)",baseUrl()+"#s-"+code)}catch(e){toast("Could not create the link")}
+});
+$("#copyLink").addEventListener("click",function(){copyText($("#linkOut").value,$("#linkOut"))});
+window.addEventListener("hashchange",loadHash);
+
+(async function init(){
+  var loaded=await loadHash();
+  if(!loaded){var last=get("hoppla:last");if(last){try{cfg=normalize(JSON.parse(last))}catch(e){}}renderForm();derived()}
+  renderSaved();
+  if(B.code)findHoppla();
+})();
+})();
+</script>
+</body>
+</html>
